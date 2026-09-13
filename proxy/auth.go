@@ -104,19 +104,12 @@ func (s *Store) ExpiresAt() (time.Time, bool) {
 	return t, true
 }
 
-func NeedsRefresh(expiresAt, now time.Time, skew time.Duration) bool {
-	if expiresAt.IsZero() {
-		return true
-	}
-	return !now.Before(expiresAt.Add(-skew))
-}
-
 func (s *Store) NeedsRefresh(now time.Time) bool {
 	exp, ok := s.ExpiresAt()
 	if !ok {
 		return true
 	}
-	return NeedsRefresh(exp, now, RefreshSkew)
+	return !now.Before(exp.Add(-RefreshSkew))
 }
 
 func (s *Store) ApplyTokens(access, refresh string, expiresAt time.Time) {

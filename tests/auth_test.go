@@ -72,10 +72,27 @@ func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
 
 func TestNeedsRefresh(t *testing.T) {
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	if !proxy.NeedsRefresh(now.Add(299*time.Second), now, proxy.RefreshSkew) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	body := `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "t",
+	    "expires_at": "2099-01-01T00:00:00Z"
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.ApplyTokens("t", "", now.Add(299*time.Second))
+	if !s.NeedsRefresh(now) {
 		t.Fatal("expected due at 299s")
 	}
-	if proxy.NeedsRefresh(now.Add(301*time.Second), now, proxy.RefreshSkew) {
+	s.ApplyTokens("t", "", now.Add(301*time.Second))
+	if s.NeedsRefresh(now) {
 		t.Fatal("expected not due at 301s")
 	}
 }
