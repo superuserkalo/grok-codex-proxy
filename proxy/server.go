@@ -53,12 +53,9 @@ func NewMux(cfg Config) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	h := func(w http.ResponseWriter, r *http.Request) {
-		cfg.serveV1(w, r)
-	}
-	mux.HandleFunc("/v1/models", h)
-	mux.HandleFunc("/v1/responses", h)
-	mux.HandleFunc("/v1/chat/completions", h)
+	mux.HandleFunc("/v1/models", cfg.serveV1)
+	mux.HandleFunc("/v1/responses", cfg.serveV1)
+	mux.HandleFunc("/v1/chat/completions", cfg.serveV1)
 	return mux
 }
 
