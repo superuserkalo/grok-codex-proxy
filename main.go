@@ -108,7 +108,6 @@ func cmdServe(args []string) int {
 		Host:          *host,
 		Port:          *port,
 		AuthPath:      authPath(),
-		TokenURL:      proxy.TokenURL,
 		OAuthToken:    os.Getenv("GROK_OAUTH_TOKEN"),
 		APIKey:        os.Getenv("XAI_API_KEY"),
 		ProxyAPIKey:   os.Getenv("PROXY_API_KEY"),

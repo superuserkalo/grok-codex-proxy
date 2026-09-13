@@ -21,12 +21,10 @@ type Config struct {
 	UseCLIHeaders bool
 	ProxyAPIKey   string
 	AuthPath      string
-	TokenURL      string
 	OAuthToken    string
 	APIKey        string
 	ClientVersion string
 	HTTPClient    *http.Client
-	Now           func() time.Time
 }
 
 func (cfg Config) client() *http.Client {
@@ -34,13 +32,6 @@ func (cfg Config) client() *http.Client {
 		return cfg.HTTPClient
 	}
 	return http.DefaultClient
-}
-
-func (cfg Config) now() time.Time {
-	if cfg.Now != nil {
-		return cfg.Now()
-	}
-	return time.Now()
 }
 
 func (cfg Config) ListenAddr() string {
@@ -175,11 +166,7 @@ func (cfg Config) bearer() (string, error) {
 			if err != nil {
 				return "", err
 			}
-			tokenURL := cfg.TokenURL
-			if tokenURL == "" {
-				tokenURL = TokenURL
-			}
-			if err := RefreshIfDue(s, cfg.client(), tokenURL, cfg.now()); err != nil {
+			if err := RefreshIfDue(s, cfg.client(), TokenURL, time.Now()); err != nil {
 				return "", err
 			}
 			if t := s.AccessToken(); t != "" {
