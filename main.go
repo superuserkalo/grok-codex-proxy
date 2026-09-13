@@ -76,11 +76,10 @@ func cmdStatus() int {
 		}
 		if exp, ok := p.Store.ExpiresAt(); ok {
 			fmt.Printf("expires_at=%s\n", exp.UTC().Format(time.RFC3339Nano))
-			fmt.Printf("needs_refresh=%t\n", p.Store.NeedsRefresh(time.Now()))
 		} else {
 			fmt.Println("expires_at=unknown")
-			fmt.Println("needs_refresh=true")
 		}
+		fmt.Printf("needs_refresh=%t\n", p.Store.NeedsRefresh(time.Now()))
 	} else if p.Source != proxy.SourceFile {
 		fmt.Println("session=none")
 		if p.Source == proxy.SourceOAuthEnv || p.Source == proxy.SourceAPIKey {
