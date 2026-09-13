@@ -71,6 +71,7 @@ type Store struct {
 	Path    string
 	entries map[string]map[string]any
 	chosen  string
+	stale   bool
 }
 
 func officialKey() string {
@@ -155,7 +156,20 @@ func (s *Store) ExpiresAt() (time.Time, bool) {
 	return t, true
 }
 
+func (s *Store) markStale() {
+	if s == nil {
+		return
+	}
+	s.stale = true
+}
+
 func (s *Store) NeedsRefresh(now time.Time) bool {
+	if s == nil {
+		return false
+	}
+	if s.stale {
+		return true
+	}
 	exp, ok := s.ExpiresAt()
 	if !ok {
 		return false
@@ -181,6 +195,7 @@ func (s *Store) ApplyTokens(access, refresh string, expiresAt time.Time) {
 		e["refresh_token"] = refresh
 	}
 	e["expires_at"] = expiresAt.UTC().Format(time.RFC3339Nano)
+	s.stale = false
 }
 
 func WriteAtomic(path string, data []byte) error {
@@ -258,6 +273,25 @@ func Refresh(ctx context.Context, s *Store, client *http.Client, tokenURL string
 		return fmt.Errorf("%w: %s", ErrPersist, err)
 	}
 	return nil
+}
+
+func applyRefresh(p *Pick, now time.Time, err error) {
+	tok := ""
+	if p.Store != nil {
+		tok = p.Store.AccessToken()
+	}
+	switch {
+	case err == nil || errors.Is(err, ErrPersist):
+		if tok != "" {
+			p.Token, p.Err = tok, nil
+			return
+		}
+		p.Token, p.Err = "", fmt.Errorf("run grok login")
+	case tok != "" && p.Store != nil && !p.Store.HardExpired(now):
+		p.Token, p.Err = tok, err
+	default:
+		p.Token, p.Err = "", err
+	}
 }
 
 func (s *Store) clientID() string {

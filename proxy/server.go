@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -83,15 +82,6 @@ type server struct {
 	sessMod    time.Time
 }
 
-type creds struct {
-	token    string
-	upstream string
-	cli      bool
-	store    *Store
-	status   int
-	err      error
-}
-
 func NewMux(cfg Config) http.Handler {
 	s := &server{cfg: cfg.prepared()}
 	s.cond = sync.NewCond(&s.mu)
@@ -114,67 +104,48 @@ func cliRejected(resp *http.Response) bool {
 	return resp.StatusCode == 401 || resp.StatusCode == 403
 }
 
-func credsFromPick(p Pick) creds {
-	c := creds{token: p.Token, upstream: p.Upstream, cli: p.CLI, store: p.Store, err: p.Err}
-	if p.Err != nil || p.Token == "" {
-		c.status = http.StatusUnauthorized
-		if c.err == nil {
-			c.err = fmt.Errorf("run grok login")
-		}
+func pickStatus(p Pick) int {
+	if p.Err == nil && p.Token != "" {
+		return 0
 	}
-	return c
+	if p.Err != nil && p.Token != "" {
+		return http.StatusBadGateway
+	}
+	return http.StatusUnauthorized
 }
 
-func credsFromStore(st *Store, upstream string) creds {
-	tok := st.AccessToken()
-	c := creds{token: tok, upstream: upstream, cli: true, store: st}
-	if tok == "" {
-		c.status = http.StatusUnauthorized
-		c.err = fmt.Errorf("run grok login")
-	}
-	return c
-}
-
-func (c *creds) applyRefresh(now time.Time, err error) {
-	tok := ""
-	if c.store != nil {
-		tok = c.store.AccessToken()
-	}
-	switch {
-	case errors.Is(err, ErrPersist) && tok != "":
-		c.token, c.err, c.status = tok, nil, 0
-	case err != nil && tok != "" && c.store != nil && !c.store.HardExpired(now):
-		c.token, c.err, c.status = tok, err, http.StatusBadGateway
-	case err != nil:
-		c.token, c.err, c.status = "", err, http.StatusUnauthorized
-	case tok != "":
-		c.token, c.err, c.status = tok, nil, 0
-	default:
-		c.token, c.err, c.status = "", fmt.Errorf("run grok login"), http.StatusUnauthorized
-	}
-}
-
-func (s *server) load() creds {
-	if s.cfg.AuthPath == "" {
-		s.sess = nil
-		return credsFromPick(Resolve(s.cfg))
+func (s *server) cached() *Store {
+	if s.cfg.AuthPath == "" || s.sess == nil {
+		return nil
 	}
 	fi, err := os.Stat(s.cfg.AuthPath)
 	if err != nil {
+		return nil
+	}
+	if !fi.ModTime().After(s.sessMod) {
+		return s.sess
+	}
+	return nil
+}
+
+func (s *server) remember(p Pick) {
+	if p.Store == nil {
 		s.sess = nil
-		return credsFromPick(Resolve(s.cfg))
+		return
 	}
-	if s.sess != nil && !fi.ModTime().After(s.sessMod) {
-		return credsFromStore(s.sess, s.cfg.OAuthUpstream)
+	s.sess = p.Store
+	if fi, err := os.Stat(p.Store.Path); err == nil {
+		s.sessMod = fi.ModTime()
 	}
-	st, err := LoadStore(s.cfg.AuthPath)
-	if err != nil {
-		s.sess = nil
-		return creds{cli: true, upstream: s.cfg.OAuthUpstream, status: http.StatusUnauthorized, err: err}
+}
+
+func (s *server) load() Pick {
+	if st := s.cached(); st != nil {
+		return Pick{CLI: true, HadFile: true, Token: st.AccessToken(), Upstream: s.cfg.OAuthUpstream, Store: st}
 	}
-	s.sess = st
-	s.sessMod = fi.ModTime()
-	return credsFromStore(st, s.cfg.OAuthUpstream)
+	p := Resolve(s.cfg)
+	s.remember(p)
+	return p
 }
 
 func (s *server) commitStore(store *Store, err error) {
@@ -186,18 +157,18 @@ func (s *server) commitStore(store *Store, err error) {
 	}
 }
 
-func (s *server) refresh(now time.Time, force bool) creds {
+func (s *server) refresh(now time.Time) Pick {
 	s.mu.Lock()
 	for s.refreshing {
 		s.cond.Wait()
 	}
-	c := s.load()
-	if c.store == nil || (!force && !c.store.NeedsRefresh(now)) {
+	p := s.load()
+	if p.Store == nil || !p.Store.NeedsRefresh(now) {
 		s.mu.Unlock()
-		return c
+		return p
 	}
 	s.refreshing = true
-	store := c.store
+	store := p.Store
 	s.mu.Unlock()
 
 	err := Refresh(context.Background(), store, s.cfg.HTTPClient, s.cfg.TokenURL, now)
@@ -206,9 +177,42 @@ func (s *server) refresh(now time.Time, force bool) creds {
 	s.refreshing = false
 	s.cond.Broadcast()
 	s.commitStore(store, err)
-	c.applyRefresh(now, err)
+	applyRefresh(&p, now, err)
 	s.mu.Unlock()
-	return c
+	return p
+}
+
+func drain(resp *http.Response) int {
+	code := resp.StatusCode
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return code
+}
+
+func withBearer(req *http.Request, token string) *http.Request {
+	req2 := req.Clone(req.Context())
+	req2.Header.Set("Authorization", "Bearer "+token)
+	return req2
+}
+
+func (s *server) recoverCLI(resp *http.Response, req *http.Request, store *Store) (*http.Response, int, error) {
+	code := drain(resp)
+	if store == nil {
+		return nil, code, nil
+	}
+	store.markStale()
+	p := s.refresh(time.Now())
+	if !retryable(req) || pickStatus(p) != 0 {
+		return nil, code, nil
+	}
+	retry, err := s.doUpstream(withBearer(req, p.Token))
+	if err != nil {
+		return nil, 0, err
+	}
+	if !cliRejected(retry) {
+		return retry, 0, nil
+	}
+	return nil, drain(retry), nil
 }
 
 func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
@@ -226,13 +230,13 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
-	c := s.refresh(time.Now(), false)
-	if c.status != 0 {
+	p := s.refresh(time.Now())
+	if st := pickStatus(p); st != 0 {
 		msg := "run grok login\n"
-		if c.err != nil {
-			msg = c.err.Error() + "\n"
+		if p.Err != nil {
+			msg = p.Err.Error() + "\n"
 		}
-		fail(c.status, msg)
+		fail(st, msg)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
@@ -247,7 +251,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, model = RewriteModel(body)
-	req, err := s.upstreamRequest(r, c, body, model)
+	req, err := s.upstreamRequest(r, p, body, model)
 	if err != nil {
 		fail(http.StatusBadRequest, "bad request\n")
 		return
@@ -258,30 +262,14 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, "upstream error\n")
 		return
 	}
-	if c.cli && cliRejected(resp) {
-		code := resp.StatusCode
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		retried := false
-		if c.store != nil {
-			c2 := s.refresh(time.Now(), true)
-			if retryable(req) && c2.status == 0 && c2.token != "" {
-				req2 := req.Clone(req.Context())
-				req2.Header.Set("Authorization", "Bearer "+c2.token)
-				resp, err = s.doUpstream(req2)
-				if err != nil {
-					fail(http.StatusBadGateway, "upstream error\n")
-					return
-				}
-				retried = true
-			}
+	if p.CLI && cliRejected(resp) {
+		var code int
+		resp, code, err = s.recoverCLI(resp, req, p.Store)
+		if err != nil {
+			fail(http.StatusBadGateway, "upstream error\n")
+			return
 		}
-		if !retried || cliRejected(resp) {
-			if retried {
-				code = resp.StatusCode
-				io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
-			}
+		if resp == nil {
 			fail(code, cliTokenRejected)
 			return
 		}
@@ -297,8 +285,8 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 	CopyStream(w, resp.Body)
 }
 
-func (s *server) upstreamRequest(r *http.Request, c creds, body []byte, model string) (*http.Request, error) {
-	upURL := JoinURL(c.upstream, r.URL.Path)
+func (s *server) upstreamRequest(r *http.Request, p Pick, body []byte, model string) (*http.Request, error) {
+	upURL := JoinURL(p.Upstream, r.URL.Path)
 	if r.URL.RawQuery != "" {
 		upURL += "?" + r.URL.RawQuery
 	}
@@ -311,8 +299,8 @@ func (s *server) upstreamRequest(r *http.Request, c creds, body []byte, model st
 	} else if len(body) > 0 {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	if c.cli {
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+	if p.CLI {
 		req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
 		if model != "" {
 			req.Header.Set("x-grok-model-override", model)
@@ -333,8 +321,7 @@ func (s *server) doUpstream(req *http.Request) (*http.Response, error) {
 	if !retryable(req) || (resp.StatusCode != 429 && resp.StatusCode < 500) {
 		return resp, nil
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	drain(resp)
 	time.Sleep(200 * time.Millisecond)
 	req2 := req.Clone(req.Context())
 	return s.cfg.HTTPClient.Do(req2)
