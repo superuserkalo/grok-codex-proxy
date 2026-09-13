@@ -35,7 +35,8 @@ type Pick struct {
 }
 
 func Resolve(cfg Config) Pick {
-	oauth, api := cfg.oauthUp(), cfg.apiUp()
+	cfg = cfg.prepared()
+	oauth, api := cfg.OAuthUpstream, cfg.APIUpstream
 	var missing error
 	if cfg.AuthPath != "" {
 		_, err := os.Stat(cfg.AuthPath)

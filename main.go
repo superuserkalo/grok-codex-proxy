@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/superuserkalo/grok-codex-proxy/proxy"
@@ -66,7 +67,7 @@ func grokClientVersion() string {
 			return ver.Version
 		}
 	}
-	return proxy.DefaultClientVersion
+	return ""
 }
 
 func cmdStatus() int {
@@ -116,10 +117,8 @@ func cmdServe(args []string) int {
 		fmt.Fprintln(os.Stderr, "refusing non-loopback bind without PROXY_API_KEY")
 		return 2
 	}
-	cfg.Host = *host
-	cfg.Port = *port
 	cfg.ClientVersion = grokClientVersion()
-	ln, err := net.Listen("tcp", cfg.ListenAddr())
+	ln, err := net.Listen("tcp", net.JoinHostPort(*host, strconv.Itoa(*port)))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -153,23 +152,9 @@ func serveConfig(auth string) proxy.Config {
 		OAuthToken:    os.Getenv("GROK_OAUTH_TOKEN"),
 		APIKey:        os.Getenv("XAI_API_KEY"),
 		ProxyAPIKey:   os.Getenv(proxyAPIKeyEnv),
-		OAuthUpstream: oauthUpstream(),
-		APIUpstream:   apiUpstream(),
+		OAuthUpstream: os.Getenv("GROK_CLI_CHAT_PROXY_BASE_URL"),
+		APIUpstream:   os.Getenv("XAI_BASE_URL"),
 	}
-}
-
-func oauthUpstream() string {
-	if v := os.Getenv("GROK_CLI_CHAT_PROXY_BASE_URL"); v != "" {
-		return v
-	}
-	return proxy.DefaultOAuthUpstream
-}
-
-func apiUpstream() string {
-	if v := os.Getenv("XAI_BASE_URL"); v != "" {
-		return v
-	}
-	return proxy.DefaultAPIUpstream
 }
 
 func writeCodexConfig(addr, envKey string) error {

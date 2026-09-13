@@ -98,22 +98,32 @@ func TestStatusUnknownExpiryUsesNeedsRefresh(t *testing.T) {
 func TestOAuthUpstreamIgnoresXAIBaseURL(t *testing.T) {
 	t.Setenv("XAI_BASE_URL", "https://api.example/v1")
 	t.Setenv("GROK_CLI_CHAT_PROXY_BASE_URL", "")
-	if got := oauthUpstream(); got != proxy.DefaultOAuthUpstream {
-		t.Fatalf("oauthUpstream=%q", got)
+	t.Setenv("GROK_OAUTH_TOKEN", "")
+	t.Setenv("XAI_API_KEY", "")
+	p := proxy.Resolve(serveConfig(filepath.Join(t.TempDir(), "auth.json")))
+	if p.Upstream != "https://cli-chat-proxy.grok.com" {
+		t.Fatalf("upstream=%q", p.Upstream)
 	}
 }
 
 func TestAPIUpstreamUsesXAIBaseURL(t *testing.T) {
 	t.Setenv("XAI_BASE_URL", "https://api.example/v1")
-	if got := apiUpstream(); got != "https://api.example/v1" {
-		t.Fatalf("apiUpstream=%q", got)
+	t.Setenv("GROK_CLI_CHAT_PROXY_BASE_URL", "")
+	t.Setenv("GROK_OAUTH_TOKEN", "")
+	t.Setenv("XAI_API_KEY", "xai-x")
+	p := proxy.Resolve(serveConfig(filepath.Join(t.TempDir(), "auth.json")))
+	if p.Upstream != "https://api.example" {
+		t.Fatalf("upstream=%q", p.Upstream)
 	}
 }
 
 func TestOAuthUpstreamUsesCLIBaseURL(t *testing.T) {
 	t.Setenv("XAI_BASE_URL", "https://api.example/v1")
 	t.Setenv("GROK_CLI_CHAT_PROXY_BASE_URL", "https://cli.example/v1")
-	if got := oauthUpstream(); got != "https://cli.example/v1" {
-		t.Fatalf("oauthUpstream=%q", got)
+	t.Setenv("GROK_OAUTH_TOKEN", "tok")
+	t.Setenv("XAI_API_KEY", "")
+	p := proxy.Resolve(serveConfig(filepath.Join(t.TempDir(), "auth.json")))
+	if p.Upstream != "https://cli.example" {
+		t.Fatalf("upstream=%q", p.Upstream)
 	}
 }

@@ -241,6 +241,17 @@ func TestLoadStorePrefixChoiceIsSorted(t *testing.T) {
 	}
 }
 
+func TestResolveEmptyUpstreamsAreOrigins(t *testing.T) {
+	p := proxy.Resolve(proxy.Config{})
+	if p.Upstream != "https://cli-chat-proxy.grok.com" {
+		t.Fatalf("default oauth origin=%q", p.Upstream)
+	}
+	p = proxy.Resolve(proxy.Config{APIKey: "xai-x"})
+	if p.Upstream != "https://api.x.ai" {
+		t.Fatalf("default api origin=%q", p.Upstream)
+	}
+}
+
 func TestResolveFileVsEnv(t *testing.T) {
 	auth := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {

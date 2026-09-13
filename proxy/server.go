@@ -22,8 +22,6 @@ const (
 )
 
 type Config struct {
-	Host          string
-	Port          int
 	OAuthUpstream string
 	APIUpstream   string
 	ProxyAPIKey   string
@@ -35,24 +33,25 @@ type Config struct {
 	HTTPClient    *http.Client
 }
 
-func (cfg Config) ListenAddr() string {
-	return net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
-}
-
-func (cfg Config) oauthUp() string {
-	u := cfg.OAuthUpstream
-	if u == "" {
-		u = DefaultOAuthUpstream
+func (cfg Config) prepared() Config {
+	if cfg.OAuthUpstream == "" {
+		cfg.OAuthUpstream = DefaultOAuthUpstream
 	}
-	return origin(u)
-}
-
-func (cfg Config) apiUp() string {
-	u := cfg.APIUpstream
-	if u == "" {
-		u = DefaultAPIUpstream
+	if cfg.APIUpstream == "" {
+		cfg.APIUpstream = DefaultAPIUpstream
 	}
-	return origin(u)
+	cfg.OAuthUpstream = origin(cfg.OAuthUpstream)
+	cfg.APIUpstream = origin(cfg.APIUpstream)
+	if cfg.ClientVersion == "" {
+		cfg.ClientVersion = DefaultClientVersion
+	}
+	if cfg.TokenURL == "" {
+		cfg.TokenURL = TokenURL
+	}
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = http.DefaultClient
+	}
+	return cfg
 }
 
 func origin(base string) string {
@@ -78,7 +77,7 @@ type server struct {
 }
 
 func NewMux(cfg Config) http.Handler {
-	s := &server{cfg: cfg}
+	s := &server{cfg: cfg.prepared()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -90,19 +89,9 @@ func NewMux(cfg Config) http.Handler {
 	return mux
 }
 
-func (s *server) tokenURL() string {
-	if s.cfg.TokenURL != "" {
-		return s.cfg.TokenURL
-	}
-	return TokenURL
-}
+func (s *server) tokenURL() string { return s.cfg.TokenURL }
 
-func (s *server) client() *http.Client {
-	if s.cfg.HTTPClient != nil {
-		return s.cfg.HTTPClient
-	}
-	return http.DefaultClient
-}
+func (s *server) client() *http.Client { return s.cfg.HTTPClient }
 
 func (s *server) bearer(ctx context.Context, now time.Time) Pick {
 	s.mu.Lock()
@@ -184,11 +173,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		if model != "" {
 			req.Header.Set("x-grok-model-override", model)
 		}
-		ver := s.cfg.ClientVersion
-		if ver == "" {
-			ver = DefaultClientVersion
-		}
-		req.Header.Set("x-grok-client-version", ver)
+		req.Header.Set("x-grok-client-version", s.cfg.ClientVersion)
 	}
 	if ae := r.Header.Get("Accept"); ae != "" {
 		req.Header.Set("Accept", ae)
