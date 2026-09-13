@@ -18,7 +18,7 @@ About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` wit
 2. `GROK_OAUTH_TOKEN` → same host and headers
 3. `XAI_API_KEY` → `https://api.x.ai/v1`, Bearer only
 
-`XAI_BASE_URL` overrides the upstream base. `GROK_CLI_CHAT_PROXY_BASE_URL` overrides the OAuth host only.
+`XAI_BASE_URL` overrides the upstream base. `GROK_CLI_CHAT_PROXY_BASE_URL` overrides the OAuth host only. Trailing `/v1` on either base is stripped; request paths already include `/v1/...`.
 
 If the file exists but cannot yield a token, `serve` returns 401 (`run grok login`) and `status` exits nonzero. Neither falls through to an API key. `status` and `serve` use this same cascade, including which upstream and headers a request gets.
 

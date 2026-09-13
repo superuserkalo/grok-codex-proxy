@@ -346,6 +346,96 @@ func TestProxyAPIKeyGate(t *testing.T) {
 	res.Body.Close()
 }
 
+func TestUpstreamV1SuffixDoesNotDouble(t *testing.T) {
+	var path string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	mux := proxy.NewMux(proxy.Config{
+		APIUpstream: up.URL + "/v1",
+		APIKey:      "xai-x",
+		AuthPath:    filepath.Join(t.TempDir(), "auth.json"),
+		HTTPClient:  up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if path != "/v1/models" {
+		t.Fatalf("path=%q", path)
+	}
+}
+
+func TestModelsGETRetries429(t *testing.T) {
+	var n atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) == 1 {
+			w.WriteHeader(429)
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	mux := proxy.NewMux(proxy.Config{
+		APIUpstream: up.URL,
+		APIKey:      "xai-x",
+		AuthPath:    filepath.Join(t.TempDir(), "auth.json"),
+		HTTPClient:  up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if n.Load() != 2 {
+		t.Fatalf("hits=%d", n.Load())
+	}
+}
+
+func TestResponsesPOSTDoesNotRetry429(t *testing.T) {
+	var n atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		w.WriteHeader(429)
+	}))
+	t.Cleanup(up.Close)
+
+	mux := proxy.NewMux(proxy.Config{
+		APIUpstream: up.URL,
+		APIKey:      "xai-x",
+		AuthPath:    filepath.Join(t.TempDir(), "auth.json"),
+		HTTPClient:  up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Post(srv.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"grok-4.6"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 429 {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if n.Load() != 1 {
+		t.Fatalf("hits=%d", n.Load())
+	}
+}
+
 func TestLoopbackHost(t *testing.T) {
 	if !proxy.LoopbackHost("127.0.0.1") || !proxy.LoopbackHost("localhost") || !proxy.LoopbackHost("::1") {
 		t.Fatal("loopback")

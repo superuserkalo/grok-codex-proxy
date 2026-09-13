@@ -236,7 +236,7 @@ func TestResolveFileVsEnv(t *testing.T) {
 	if p.Err != nil || p.Source != proxy.SourceFile || p.Token != "session-token" || p.Store == nil {
 		t.Fatalf("file: %+v", p)
 	}
-	if p.Upstream != "https://cli.example/v1" {
+	if p.Upstream != "https://cli.example" {
 		t.Fatalf("file upstream=%q", p.Upstream)
 	}
 
@@ -250,7 +250,7 @@ func TestResolveFileVsEnv(t *testing.T) {
 	if p.Err != nil || p.Source != proxy.SourceAPIKey || p.Token != "xai-x" || p.Store != nil {
 		t.Fatalf("api: %+v", p)
 	}
-	if p.Upstream != "https://api.example/v1" {
+	if p.Upstream != "https://api.example" {
 		t.Fatalf("api upstream=%q", p.Upstream)
 	}
 
@@ -263,7 +263,7 @@ func TestResolveFileVsEnv(t *testing.T) {
 	if p.Err == nil || p.Source != proxy.SourceFile || p.Token != "" || p.Store != nil {
 		t.Fatalf("corrupt: %+v", p)
 	}
-	if p.Upstream != "https://cli.example/v1" {
+	if p.Upstream != "https://cli.example" {
 		t.Fatalf("corrupt upstream=%q", p.Upstream)
 	}
 }

@@ -95,8 +95,5 @@ func JoinURL(base, path string) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(path, "/v1/") {
-		path = strings.TrimPrefix(path, "/v1")
-	}
 	return base + path
 }

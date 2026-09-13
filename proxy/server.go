@@ -39,17 +39,27 @@ func (cfg Config) ListenAddr() string {
 }
 
 func (cfg Config) oauthUp() string {
-	if cfg.OAuthUpstream != "" {
-		return cfg.OAuthUpstream
+	u := cfg.OAuthUpstream
+	if u == "" {
+		u = DefaultOAuthUpstream
 	}
-	return DefaultOAuthUpstream
+	return origin(u)
 }
 
 func (cfg Config) apiUp() string {
-	if cfg.APIUpstream != "" {
-		return cfg.APIUpstream
+	u := cfg.APIUpstream
+	if u == "" {
+		u = DefaultAPIUpstream
 	}
-	return DefaultAPIUpstream
+	return origin(u)
+}
+
+func origin(base string) string {
+	base = strings.TrimRight(base, "/")
+	if strings.HasSuffix(base, "/v1") {
+		return strings.TrimRight(strings.TrimSuffix(base, "/v1"), "/")
+	}
+	return base
 }
 
 func LoopbackHost(host string) bool {
@@ -203,7 +213,7 @@ func (s *server) doUpstream(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	idempotent := req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/models")
+	idempotent := req.Method == http.MethodGet && req.URL.Path == "/v1/models"
 	if !idempotent || (resp.StatusCode != 429 && resp.StatusCode < 500) {
 		return resp, nil
 	}

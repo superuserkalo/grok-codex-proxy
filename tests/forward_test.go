@@ -77,12 +77,11 @@ func TestRewriteModelDoesNotTouchSlugInOtherFields(t *testing.T) {
 	}
 }
 
-func TestJoinURLStripsDuplicateV1(t *testing.T) {
+func TestJoinURL(t *testing.T) {
 	cases := map[[2]string]string{
-		{"https://cli-chat-proxy.grok.com/v1", "/v1/responses"}: "https://cli-chat-proxy.grok.com/v1/responses",
-		{"https://cli-chat-proxy.grok.com/v1", "/v1/models"}:    "https://cli-chat-proxy.grok.com/v1/models",
-		{"https://api.x.ai/v1", "/v1/chat/completions"}:         "https://api.x.ai/v1/chat/completions",
-		{"http://127.0.0.1:1234", "/v1/responses"}:              "http://127.0.0.1:1234/v1/responses",
+		{"https://cli-chat-proxy.grok.com", "/v1/responses"}: "https://cli-chat-proxy.grok.com/v1/responses",
+		{"https://cli-chat-proxy.grok.com/", "v1/models"}:    "https://cli-chat-proxy.grok.com/v1/models",
+		{"http://127.0.0.1:1234", "/v1/responses"}:           "http://127.0.0.1:1234/v1/responses",
 	}
 	for in, want := range cases {
 		if got := proxy.JoinURL(in[0], in[1]); got != want {
