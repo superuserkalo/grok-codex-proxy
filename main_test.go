@@ -13,7 +13,7 @@ import (
 func TestWriteCodexConfigIPv6AndProxyAPIKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("CODEX_HOME", home)
-	if err := writeCodexConfig("[::1]:8787", true); err != nil {
+	if err := writeCodexConfig("[::1]:8787", "PROXY_API_KEY"); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(home, "config.toml"))
@@ -29,6 +29,30 @@ func TestWriteCodexConfigIPv6AndProxyAPIKey(t *testing.T) {
 	}
 	if strings.Contains(got, "GROK_CODEX_PROXY_KEY") {
 		t.Fatalf("old env name:\n%s", got)
+	}
+}
+
+func TestWriteCodexConfigOmitsEnvKey(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEX_HOME", home)
+	if err := writeCodexConfig("127.0.0.1:8787", ""); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(home, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "env_key") {
+		t.Fatalf("unexpected env_key:\n%s", b)
+	}
+}
+
+func TestServeRefusesNonLoopbackWithoutKey(t *testing.T) {
+	t.Setenv("PROXY_API_KEY", "")
+	t.Setenv("GROK_HOME", t.TempDir())
+	code := cmdServe([]string{"--host", "0.0.0.0", "--port", "0", "--no-write-config"})
+	if code != 2 {
+		t.Fatalf("code=%d", code)
 	}
 }
 
