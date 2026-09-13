@@ -1,4 +1,4 @@
-package main
+package proxy_test
 
 import (
 	"io"
@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
 )
 
 func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
@@ -32,7 +34,7 @@ func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := LoadStore(path)
+	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +61,7 @@ func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := LoadStore(path)
+	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +72,10 @@ func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
 
 func TestNeedsRefresh(t *testing.T) {
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	if !NeedsRefresh(now.Add(299*time.Second), now, RefreshSkew) {
+	if !proxy.NeedsRefresh(now.Add(299*time.Second), now, proxy.RefreshSkew) {
 		t.Fatal("expected due at 299s")
 	}
-	if NeedsRefresh(now.Add(301*time.Second), now, RefreshSkew) {
+	if proxy.NeedsRefresh(now.Add(301*time.Second), now, proxy.RefreshSkew) {
 		t.Fatal("expected not due at 301s")
 	}
 }
@@ -93,7 +95,7 @@ func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := LoadStore(path)
+	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +103,7 @@ func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
 	if err := s.Save(); err != nil {
 		t.Fatal(err)
 	}
-	s2, err := LoadStore(path)
+	s2, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,17 +145,17 @@ func TestRefreshIfDuePostsFormAndSaves(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := LoadStore(path)
+	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RefreshIfDue(s, ts.Client(), ts.URL, now); err != nil {
+	if err := proxy.RefreshIfDue(s, ts.Client(), ts.URL, now); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, "grant_type=refresh_token") || !strings.Contains(gotBody, "refresh_token=r1") {
 		t.Fatalf("form=%q", gotBody)
 	}
-	s2, err := LoadStore(path)
+	s2, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}

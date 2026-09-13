@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
 )
 
 const usage = `grok-codex-proxy status
@@ -66,7 +68,7 @@ func grokClientVersion() string {
 func cmdStatus() int {
 	path := authPath()
 	fmt.Printf("auth_path=%s\n", path)
-	s, err := LoadStore(path)
+	s, err := proxy.LoadStore(path)
 	if err != nil {
 		fmt.Printf("session=none\nerror=%s\n", err)
 		if os.Getenv("GROK_OAUTH_TOKEN") == "" && os.Getenv("XAI_API_KEY") == "" {
@@ -98,15 +100,15 @@ func cmdServe(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if !loopbackHost(*host) && os.Getenv("PROXY_API_KEY") == "" {
+	if !proxy.LoopbackHost(*host) && os.Getenv("PROXY_API_KEY") == "" {
 		fmt.Fprintln(os.Stderr, "refusing non-loopback bind without PROXY_API_KEY")
 		return 2
 	}
-	cfg := Config{
+	cfg := proxy.Config{
 		Host:          *host,
 		Port:          *port,
 		AuthPath:      authPath(),
-		TokenURL:      TokenURL,
+		TokenURL:      proxy.TokenURL,
 		OAuthToken:    os.Getenv("GROK_OAUTH_TOKEN"),
 		APIKey:        os.Getenv("XAI_API_KEY"),
 		ProxyAPIKey:   os.Getenv("PROXY_API_KEY"),
@@ -120,11 +122,11 @@ func cmdServe(args []string) int {
 		}
 		fmt.Fprintln(os.Stderr, "wrote Codex provider table")
 	}
-	addr := cfg.listenAddr()
+	addr := cfg.ListenAddr()
 	fmt.Fprintf(os.Stderr, "listening on http://%s\n", addr)
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
-	if err := http.ListenAndServe(addr, NewMux(cfg)); err != nil {
+	if err := http.ListenAndServe(addr, proxy.NewMux(cfg)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -148,7 +150,7 @@ func apiUpstream() string {
 	return "https://api.x.ai/v1"
 }
 
-func resolveUpstream(cfg Config) (bool, string) {
+func resolveUpstream(cfg proxy.Config) (bool, string) {
 	if _, err := os.Stat(cfg.AuthPath); err == nil {
 		return true, oauthUpstream()
 	}
@@ -181,5 +183,5 @@ func writeCodexConfig(host string, port int, gate bool) error {
 	if gate {
 		envKey = "GROK_CODEX_PROXY_KEY"
 	}
-	return writeAtomic(path, []byte(UpsertProvider(src, base, envKey)))
+	return proxy.WriteAtomic(path, []byte(proxy.UpsertProvider(src, base, envKey)))
 }

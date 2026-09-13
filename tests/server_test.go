@@ -1,4 +1,4 @@
-package main
+package proxy_test
 
 import (
 	"io"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
 )
 
 func TestHealthzAndForwardInjectsCLIHeaders(t *testing.T) {
@@ -35,7 +37,7 @@ func TestHealthzAndForwardInjectsCLIHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mux := NewMux(Config{
+	mux := proxy.NewMux(proxy.Config{
 		Upstream:      up.URL,
 		UseCLIHeaders: true,
 		AuthPath:      auth,
@@ -78,7 +80,7 @@ func TestProxyAPIKeyGate(t *testing.T) {
 		w.WriteHeader(200)
 	}))
 	t.Cleanup(up.Close)
-	mux := NewMux(Config{Upstream: up.URL, ProxyAPIKey: "secret", APIKey: "xai-x", HTTPClient: up.Client()})
+	mux := proxy.NewMux(proxy.Config{Upstream: up.URL, ProxyAPIKey: "secret", APIKey: "xai-x", HTTPClient: up.Client()})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	res, err := http.Get(srv.URL + "/v1/models")
@@ -102,10 +104,10 @@ func TestProxyAPIKeyGate(t *testing.T) {
 }
 
 func TestLoopbackHost(t *testing.T) {
-	if !loopbackHost("127.0.0.1") || !loopbackHost("localhost") || !loopbackHost("::1") {
+	if !proxy.LoopbackHost("127.0.0.1") || !proxy.LoopbackHost("localhost") || !proxy.LoopbackHost("::1") {
 		t.Fatal("loopback")
 	}
-	if loopbackHost("0.0.0.0") || loopbackHost("1.2.3.4") {
+	if proxy.LoopbackHost("0.0.0.0") || proxy.LoopbackHost("1.2.3.4") {
 		t.Fatal("non-loopback")
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"encoding/json"
@@ -131,7 +131,7 @@ func (s *Store) ApplyTokens(access, refresh string, expiresAt time.Time) {
 	e["expires_at"] = expiresAt.UTC().Format(time.RFC3339Nano)
 }
 
-func writeAtomic(path string, data []byte) error {
+func WriteAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
@@ -148,7 +148,7 @@ func (s *Store) Save() error {
 		return err
 	}
 	b = append(b, '\n')
-	return writeAtomic(s.Path, b)
+	return WriteAtomic(s.Path, b)
 }
 
 func RefreshIfDue(s *Store, client *http.Client, tokenURL string, now time.Time) error {

@@ -1,13 +1,15 @@
-package main
+package proxy_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
 )
 
 func TestUpsertProviderInsertsAndReplacesWithoutTouchingModel(t *testing.T) {
 	src := "model = \"gpt-6-astra\"\nmodel_provider = \"openai\"\n\n[notice]\nfast_default_opt_out = true\n"
-	got := UpsertProvider(src, "http://127.0.0.1:8787/v1", "")
+	got := proxy.UpsertProvider(src, "http://127.0.0.1:8787/v1", "")
 	if !strings.Contains(got, "model = \"gpt-6-astra\"") {
 		t.Fatalf("model line lost:\n%s", got)
 	}
@@ -21,7 +23,7 @@ func TestUpsertProviderInsertsAndReplacesWithoutTouchingModel(t *testing.T) {
 		t.Fatalf("unexpected env_key:\n%s", got)
 	}
 
-	got2 := UpsertProvider(got, "http://127.0.0.1:9999/v1", "GROK_CODEX_PROXY_KEY")
+	got2 := proxy.UpsertProvider(got, "http://127.0.0.1:9999/v1", "GROK_CODEX_PROXY_KEY")
 	if count := strings.Count(got2, "[model_providers.xai-oauth]"); count != 1 {
 		t.Fatalf("tables=%d\n%s", count, got2)
 	}

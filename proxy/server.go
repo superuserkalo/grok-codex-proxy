@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"bytes"
@@ -43,11 +43,11 @@ func (cfg Config) now() time.Time {
 	return time.Now()
 }
 
-func (cfg Config) listenAddr() string {
+func (cfg Config) ListenAddr() string {
 	return net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
 }
 
-func loopbackHost(host string) bool {
+func LoopbackHost(host string) bool {
 	h := strings.Trim(host, "[]")
 	if h == "localhost" || h == "127.0.0.1" || h == "::1" {
 		return true
@@ -99,9 +99,9 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadRequest, "bad request\n")
 		return
 	}
-	body, model = rewriteModel(body)
+	body, model = RewriteModel(body)
 
-	upURL := joinURL(cfg.Upstream, r.URL.Path)
+	upURL := JoinURL(cfg.Upstream, r.URL.Path)
 	if r.URL.RawQuery != "" {
 		upURL += "?" + r.URL.RawQuery
 	}
@@ -149,7 +149,7 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 	}
 	status = resp.StatusCode
 	w.WriteHeader(resp.StatusCode)
-	copyStream(w, resp.Body)
+	CopyStream(w, resp.Body)
 }
 
 func (cfg Config) doUpstream(req *http.Request) (*http.Response, error) {

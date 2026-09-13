@@ -1,14 +1,16 @@
-package main
+package proxy_test
 
 import (
 	"bytes"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
 )
 
 func TestRewriteModel(t *testing.T) {
-	out, model := rewriteModel([]byte(`{"model":"xai/grok-4.6","stream":true,"input":"hi"}`))
+	out, model := proxy.RewriteModel([]byte(`{"model":"xai/grok-4.6","stream":true,"input":"hi"}`))
 	if model != "grok-4.6" {
 		t.Fatalf("model=%q", model)
 	}
@@ -28,8 +30,8 @@ func TestJoinURLStripsDuplicateV1(t *testing.T) {
 		{"http://127.0.0.1:1234", "/v1/responses"}:              "http://127.0.0.1:1234/v1/responses",
 	}
 	for in, want := range cases {
-		if got := joinURL(in[0], in[1]); got != want {
-			t.Fatalf("joinURL(%q,%q)=%q want %q", in[0], in[1], got, want)
+		if got := proxy.JoinURL(in[0], in[1]); got != want {
+			t.Fatalf("JoinURL(%q,%q)=%q want %q", in[0], in[1], got, want)
 		}
 	}
 }
@@ -37,7 +39,7 @@ func TestJoinURLStripsDuplicateV1(t *testing.T) {
 func TestCopyStreamWritesSSEChunks(t *testing.T) {
 	src := strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"p\"}\n\ndata: [DONE]\n\n")
 	rr := httptest.NewRecorder()
-	copyStream(rr, src)
+	proxy.CopyStream(rr, src)
 	got := rr.Body.String()
 	if !strings.Contains(got, "response.output_text.delta") || !strings.Contains(got, "[DONE]") {
 		t.Fatalf("sse=%q", got)

@@ -1,4 +1,4 @@
-package main
+package proxy
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func rewriteModel(body []byte) ([]byte, string) {
+func RewriteModel(body []byte) ([]byte, string) {
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err != nil {
 		return body, ""
@@ -25,7 +25,7 @@ func rewriteModel(body []byte) ([]byte, string) {
 	return out, mapped
 }
 
-func copyStream(dst http.ResponseWriter, src io.Reader) {
+func CopyStream(dst http.ResponseWriter, src io.Reader) {
 	buf := make([]byte, 32*1024)
 	fl, _ := dst.(http.Flusher)
 	for {
@@ -42,7 +42,7 @@ func copyStream(dst http.ResponseWriter, src io.Reader) {
 	}
 }
 
-func joinURL(base, path string) string {
+func JoinURL(base, path string) string {
 	base = strings.TrimRight(base, "/")
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path

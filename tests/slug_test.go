@@ -1,6 +1,10 @@
-package main
+package proxy_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
+)
 
 func TestMapModel(t *testing.T) {
 	cases := map[string]string{
@@ -14,7 +18,7 @@ func TestMapModel(t *testing.T) {
 		"xai/custom-thing":    "custom-thing",
 	}
 	for in, want := range cases {
-		if got := MapModel(in); got != want {
+		if got := proxy.MapModel(in); got != want {
 			t.Fatalf("MapModel(%q)=%q want %q", in, got, want)
 		}
 	}

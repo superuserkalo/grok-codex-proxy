@@ -1,15 +1,23 @@
-package main
+package proxy_test
 
 import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestUsageExit(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("caller")
+	}
+	root := filepath.Join(filepath.Dir(file), "..")
 	exe := filepath.Join(t.TempDir(), "p")
-	if out, err := exec.Command("go", "build", "-o", exe, ".").CombinedOutput(); err != nil {
+	build := exec.Command("go", "build", "-o", exe, ".")
+	build.Dir = root
+	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %s", out)
 	}
 	cmd := exec.Command(exe)
