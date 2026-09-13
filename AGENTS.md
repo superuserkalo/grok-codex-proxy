@@ -35,8 +35,8 @@ CI (`.github/workflows/test.yml`): `gofmt`, `go vet`, `go test ./...`. Do not ad
 - Never log tokens or `auth.json`. Never copy `~/.grok/auth.json` into the repo.
 - Commands: `status`, `serve` (`--host`, `--port`, `--no-write-config`). Routes: GET `/healthz`, GET `/v1/models`, POST `/v1/responses`, POST `/v1/chat/completions`.
 - Thin forward: rewrite only the model slug (leave other JSON bytes intact), inject upstream headers, pass the body through, `Flush` SSE. Do not parse tool-call JSON.
-- One credential cascade for `status` and `serve` (file, `GROK_OAUTH_TOKEN`, `XAI_API_KEY`). `Pick.Source` is that cascade; `Pick.CLI` is the header dialect; `Pick.gate` is 401 vs 502.
-- Serialize refresh in `session`. Cache the Store against `auth.json` mtime. CLI 401 force-stale is under the same lock and only runs when a Store exists. The token HTTP call uses a background 15s timeout, not the inbound request context, and does not hold the mutex. A rotated session stays in process if `auth.json` save fails, until the file mtime is newer.
+- One credential cascade for `status` and `serve` (file, `GROK_OAUTH_TOKEN`, `XAI_API_KEY`). `Pick.Source` is that cascade; `Pick.CLI` is the header dialect. `Pick.Token` is the bearer for this request. `Pick.gate` is 401 vs 502 (502 = the store still has a live token we did not send).
+- Serialize refresh in `session` under the mutex. Cache the Store against `auth.json` mtime. CLI 401 force-refresh is session state under the same lock and only runs when a Store exists. The token HTTP call uses a background 15s timeout, not the inbound request context. A rotated session stays in process if `auth.json` save fails, until the file mtime is newer.
 - No creds / hard-expired session → 401. In-window refresh transport failure → 502. Body over 32MiB → 413.
 - Retry GET `/v1/models` on 429 / transient 5xx, and once after a CLI 401/403 rotation. Never replay POST streams.
 - Default bind `127.0.0.1:8787`. Refuse off-loopback unless `PROXY_API_KEY` is set.

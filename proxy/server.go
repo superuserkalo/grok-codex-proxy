@@ -110,6 +110,28 @@ func withBearer(req *http.Request, token string) *http.Request {
 	return req2
 }
 
+func (s *server) recoverCLI(resp *http.Response, req *http.Request, p Pick) (*http.Response, int, error) {
+	code := drain(resp)
+	if p.Store == nil {
+		return nil, code, nil
+	}
+	p = s.sess.rotate(time.Now())
+	if !retryable(req) {
+		return nil, code, nil
+	}
+	if st, _ := p.gate(); st != 0 {
+		return nil, code, nil
+	}
+	retry, err := s.doUpstream(withBearer(req, p.Token))
+	if err != nil {
+		return nil, 0, err
+	}
+	if !cliRejected(retry) {
+		return retry, 0, nil
+	}
+	return nil, drain(retry), nil
+}
+
 func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	status := 0
@@ -154,25 +176,14 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.CLI() && cliRejected(resp) {
-		code := drain(resp)
-		if p.Store != nil {
-			p = s.sess.rotate(time.Now())
-		}
-		if !retryable(req) || p.Store == nil {
-			fail(code, cliTokenRejected)
-			return
-		}
-		if st, _ := p.gate(); st != 0 {
-			fail(code, cliTokenRejected)
-			return
-		}
-		resp, err = s.doUpstream(withBearer(req, p.Token))
+		var code int
+		resp, code, err = s.recoverCLI(resp, req, p)
 		if err != nil {
 			fail(http.StatusBadGateway, "upstream error\n")
 			return
 		}
-		if cliRejected(resp) {
-			fail(drain(resp), cliTokenRejected)
+		if resp == nil {
+			fail(code, cliTokenRejected)
 			return
 		}
 	}

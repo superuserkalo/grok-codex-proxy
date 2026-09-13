@@ -86,7 +86,7 @@ func (p Pick) gate() (int, string) {
 	if p.Err != nil {
 		msg = p.Err.Error() + "\n"
 	}
-	if p.Err != nil && p.Token != "" {
+	if p.Err != nil && p.Store != nil && p.Store.AccessToken() != "" && !p.Store.HardExpired(time.Now()) {
 		return http.StatusBadGateway, msg
 	}
 	return http.StatusUnauthorized, msg
@@ -96,7 +96,6 @@ type Store struct {
 	Path    string
 	entries map[string]map[string]any
 	chosen  string
-	stale   bool
 }
 
 func officialKey() string {
@@ -181,19 +180,9 @@ func (s *Store) ExpiresAt() (time.Time, bool) {
 	return t, true
 }
 
-func (s *Store) markStale() {
-	if s == nil {
-		return
-	}
-	s.stale = true
-}
-
 func (s *Store) NeedsRefresh(now time.Time) bool {
 	if s == nil {
 		return false
-	}
-	if s.stale {
-		return true
 	}
 	exp, ok := s.ExpiresAt()
 	if !ok {
@@ -220,7 +209,6 @@ func (s *Store) ApplyTokens(access, refresh string, expiresAt time.Time) {
 		e["refresh_token"] = refresh
 	}
 	e["expires_at"] = expiresAt.UTC().Format(time.RFC3339Nano)
-	s.stale = false
 }
 
 func WriteAtomic(path string, data []byte) error {
@@ -300,23 +288,20 @@ func Refresh(ctx context.Context, s *Store, client *http.Client, tokenURL string
 	return nil
 }
 
-func applyRefresh(p *Pick, now time.Time, err error) {
+func applyRefresh(p *Pick, err error) {
 	tok := ""
 	if p.Store != nil {
 		tok = p.Store.AccessToken()
 	}
-	switch {
-	case err == nil || errors.Is(err, ErrPersist):
+	if err == nil || errors.Is(err, ErrPersist) {
 		if tok != "" {
 			p.Token, p.Err = tok, nil
 			return
 		}
 		p.Token, p.Err = "", fmt.Errorf("run grok login")
-	case tok != "" && !p.Store.HardExpired(now):
-		p.Token, p.Err = tok, err
-	default:
-		p.Token, p.Err = "", err
+		return
 	}
+	p.Token, p.Err = "", err
 }
 
 func (s *Store) clientID() string {
@@ -328,18 +313,15 @@ func (s *Store) clientID() string {
 }
 
 type session struct {
-	cfg        Config
-	mu         sync.Mutex
-	cond       *sync.Cond
-	refreshing bool
-	store      *Store
-	mod        time.Time
+	cfg   Config
+	mu    sync.Mutex
+	store *Store
+	mod   time.Time
+	stale bool
 }
 
 func newSession(cfg Config) *session {
-	s := &session{cfg: cfg.prepared()}
-	s.cond = sync.NewCond(&s.mu)
-	return s
+	return &session{cfg: cfg.prepared()}
 }
 
 func (s *session) setStore(st *Store) {
@@ -380,6 +362,7 @@ func (s *session) load() Pick {
 	p := Resolve(s.cfg)
 	s.setStore(p.Store)
 	s.noteDisk()
+	s.stale = false
 	return p
 }
 
@@ -393,31 +376,25 @@ func (s *session) rotate(now time.Time) Pick {
 
 func (s *session) refresh(now time.Time, force bool) Pick {
 	s.mu.Lock()
-	for s.refreshing {
-		s.cond.Wait()
-	}
+	defer s.mu.Unlock()
 	p := s.load()
-	if force && p.Store != nil {
-		p.Store.markStale()
-	}
-	if p.Store == nil || !p.Store.NeedsRefresh(now) {
-		s.mu.Unlock()
+	if p.Store == nil {
 		return p
 	}
-	s.refreshing = true
-	store := p.Store
-	s.mu.Unlock()
-
-	err := Refresh(context.Background(), store, s.cfg.HTTPClient, s.cfg.TokenURL, now)
-
-	s.mu.Lock()
-	s.refreshing = false
-	s.cond.Broadcast()
-	applyRefresh(&p, now, err)
+	if force {
+		s.stale = true
+	}
+	if !s.stale && !p.Store.NeedsRefresh(now) {
+		return p
+	}
+	err := Refresh(context.Background(), p.Store, s.cfg.HTTPClient, s.cfg.TokenURL, now)
+	applyRefresh(&p, err)
 	s.setStore(p.Store)
 	if err == nil {
 		s.noteDisk()
 	}
-	s.mu.Unlock()
+	if p.Err == nil {
+		s.stale = false
+	}
 	return p
 }
