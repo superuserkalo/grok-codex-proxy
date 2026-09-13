@@ -24,6 +24,7 @@ type Config struct {
 	TokenURL      string
 	OAuthToken    string
 	APIKey        string
+	ClientVersion string
 	HTTPClient    *http.Client
 	Now           func() time.Time
 }
@@ -120,6 +121,11 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 		if model != "" {
 			req.Header.Set("x-grok-model-override", model)
 		}
+		ver := cfg.ClientVersion
+		if ver == "" {
+			ver = "1.0.30"
+		}
+		req.Header.Set("x-grok-client-version", ver)
 	}
 	if ae := r.Header.Get("Accept"); ae != "" {
 		req.Header.Set("Accept", ae)

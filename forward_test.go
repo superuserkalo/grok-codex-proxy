@@ -20,6 +20,20 @@ func TestRewriteModel(t *testing.T) {
 	}
 }
 
+func TestJoinURLStripsDuplicateV1(t *testing.T) {
+	cases := map[[2]string]string{
+		{"https://cli-chat-proxy.grok.com/v1", "/v1/responses"}: "https://cli-chat-proxy.grok.com/v1/responses",
+		{"https://cli-chat-proxy.grok.com/v1", "/v1/models"}:    "https://cli-chat-proxy.grok.com/v1/models",
+		{"https://api.x.ai/v1", "/v1/chat/completions"}:         "https://api.x.ai/v1/chat/completions",
+		{"http://127.0.0.1:1234", "/v1/responses"}:              "http://127.0.0.1:1234/v1/responses",
+	}
+	for in, want := range cases {
+		if got := joinURL(in[0], in[1]); got != want {
+			t.Fatalf("joinURL(%q,%q)=%q want %q", in[0], in[1], got, want)
+		}
+	}
+}
+
 func TestCopyStreamWritesSSEChunks(t *testing.T) {
 	src := strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"p\"}\n\ndata: [DONE]\n\n")
 	rr := httptest.NewRecorder()

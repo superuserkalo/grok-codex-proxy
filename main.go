@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -46,6 +47,22 @@ func grokHome() string {
 
 func authPath() string { return filepath.Join(grokHome(), "auth.json") }
 
+func grokClientVersion() string {
+	if v := os.Getenv("GROK_CLIENT_VERSION"); v != "" {
+		return v
+	}
+	b, err := os.ReadFile(filepath.Join(grokHome(), "version.json"))
+	if err == nil {
+		var ver struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(b, &ver) == nil && ver.Version != "" {
+			return ver.Version
+		}
+	}
+	return "1.0.30"
+}
+
 func cmdStatus() int {
 	path := authPath()
 	fmt.Printf("auth_path=%s\n", path)
@@ -86,13 +103,14 @@ func cmdServe(args []string) int {
 		return 2
 	}
 	cfg := Config{
-		Host:        *host,
-		Port:        *port,
-		AuthPath:    authPath(),
-		TokenURL:    TokenURL,
-		OAuthToken:  os.Getenv("GROK_OAUTH_TOKEN"),
-		APIKey:      os.Getenv("XAI_API_KEY"),
-		ProxyAPIKey: os.Getenv("PROXY_API_KEY"),
+		Host:          *host,
+		Port:          *port,
+		AuthPath:      authPath(),
+		TokenURL:      TokenURL,
+		OAuthToken:    os.Getenv("GROK_OAUTH_TOKEN"),
+		APIKey:        os.Getenv("XAI_API_KEY"),
+		ProxyAPIKey:   os.Getenv("PROXY_API_KEY"),
+		ClientVersion: grokClientVersion(),
 	}
 	cfg.UseCLIHeaders, cfg.Upstream = resolveUpstream(cfg)
 	if !*noWrite {

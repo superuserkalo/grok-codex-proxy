@@ -43,5 +43,12 @@ func copyStream(dst http.ResponseWriter, src io.Reader) {
 }
 
 func joinURL(base, path string) string {
-	return strings.TrimRight(base, "/") + path
+	base = strings.TrimRight(base, "/")
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if strings.HasSuffix(base, "/v1") && strings.HasPrefix(path, "/v1/") {
+		path = strings.TrimPrefix(path, "/v1")
+	}
+	return base + path
 }

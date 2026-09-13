@@ -16,7 +16,7 @@ About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` wit
 
 ## Credential order
 
-1. Valid OAuth file entry → `https://cli-chat-proxy.grok.com/v1` with CLI headers
+1. Valid OAuth file entry → `https://cli-chat-proxy.grok.com/v1` with CLI headers (`X-XAI-Token-Auth`, `x-grok-model-override`, `x-grok-client-version` from `~/.grok/version.json`)
 2. `GROK_OAUTH_TOKEN` → same host and headers
 3. `XAI_API_KEY` → `https://api.x.ai/v1`, Bearer only
 

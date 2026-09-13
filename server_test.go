@@ -11,12 +11,13 @@ import (
 )
 
 func TestHealthzAndForwardInjectsCLIHeaders(t *testing.T) {
-	var sawAuth, sawCLI, sawOverride, path string
+	var sawAuth, sawCLI, sawOverride, sawVer, path string
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
 		sawAuth = r.Header.Get("Authorization")
 		sawCLI = r.Header.Get("X-XAI-Token-Auth")
 		sawOverride = r.Header.Get("x-grok-model-override")
+		sawVer = r.Header.Get("x-grok-client-version")
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: {\"type\":\"response.created\"}\n\n")
 	}))
@@ -64,8 +65,8 @@ func TestHealthzAndForwardInjectsCLIHeaders(t *testing.T) {
 	if path != "/v1/responses" {
 		t.Fatalf("path=%q", path)
 	}
-	if sawAuth != "Bearer session-token" || sawCLI != "xai-grok-cli" || sawOverride != "grok-4.6" {
-		t.Fatalf("headers auth=%q cli=%q ov=%q", sawAuth, sawCLI, sawOverride)
+	if sawAuth != "Bearer session-token" || sawCLI != "xai-grok-cli" || sawOverride != "grok-4.6" || sawVer != "1.0.30" {
+		t.Fatalf("headers auth=%q cli=%q ov=%q ver=%q", sawAuth, sawCLI, sawOverride, sawVer)
 	}
 	if !strings.Contains(string(out), "response.created") {
 		t.Fatalf("sse=%s", out)
