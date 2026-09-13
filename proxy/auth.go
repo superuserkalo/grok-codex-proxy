@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -49,12 +50,20 @@ func (s *Store) pick() error {
 		s.chosen = officialKey()
 		return nil
 	}
-	for k, e := range s.entries {
+	keys := make([]string, 0, len(s.entries))
+	for k := range s.entries {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		if strings.HasPrefix(k, OfficialIssuer) {
 			s.chosen = k
 			return nil
 		}
-		if iss, _ := e["oidc_issuer"].(string); strings.Contains(iss, "auth.x.ai") {
+	}
+	for _, k := range keys {
+		iss, _ := s.entries[k]["oidc_issuer"].(string)
+		if strings.Contains(iss, "auth.x.ai") {
 			s.chosen = k
 			return nil
 		}

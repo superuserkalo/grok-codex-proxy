@@ -4,9 +4,7 @@ Path: `${GROK_HOME:-$HOME/.grok}/auth.json`. Written by `grok login`. This proxy
 
 ## Shape
 
-JSON object keyed by `issuer::client_id`. Preferred entry:
-
-`https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828`
+JSON object keyed by `issuer::client_id`. Pick order: official `https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828`, else first sorted key prefixed `https://auth.x.ai`, else first sorted entry whose `oidc_issuer` contains `auth.x.ai`.
 
 Access token: `key`, else `access_token`. Also `refresh_token`, `expires_at`, plus profile fields that are preserved on write.
 
