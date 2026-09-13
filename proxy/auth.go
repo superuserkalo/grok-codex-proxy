@@ -40,15 +40,16 @@ const (
 type Pick struct {
 	Token    string
 	Upstream string
-	CLI      bool
 	Source   Source
 	Store    *Store
 	Err      error
 }
 
 func newPick(src Source, token, upstream string, st *Store, err error) Pick {
-	return Pick{Token: token, Upstream: upstream, CLI: src != SourceAPI, Source: src, Store: st, Err: err}
+	return Pick{Token: token, Upstream: upstream, Source: src, Store: st, Err: err}
 }
+
+func (p Pick) CLI() bool { return p.Source != SourceAPI }
 
 func Resolve(cfg Config) Pick {
 	cfg = cfg.prepared()
@@ -112,13 +113,13 @@ func LoadStore(path string) (*Store, error) {
 		return nil, fmt.Errorf("auth.json: %w", err)
 	}
 	s := &Store{Path: path, entries: entries}
-	if err := s.pick(); err != nil {
+	if err := s.choose(); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-func (s *Store) pick() error {
+func (s *Store) choose() error {
 	if _, ok := s.entries[officialKey()]; ok {
 		s.chosen = officialKey()
 		return nil
@@ -331,7 +332,7 @@ type session struct {
 	mu         sync.Mutex
 	cond       *sync.Cond
 	refreshing bool
-	pick       Pick
+	store      *Store
 	mod        time.Time
 }
 
@@ -341,43 +342,44 @@ func newSession(cfg Config) *session {
 	return s
 }
 
-func (s *session) set(p Pick, bumpMod bool) {
-	s.pick = p
-	if p.Store == nil {
+func (s *session) setStore(st *Store) {
+	s.store = st
+	if st == nil {
+		s.mod = time.Time{}
+	}
+}
+
+func (s *session) noteDisk() {
+	if s.store == nil {
 		s.mod = time.Time{}
 		return
 	}
-	if !bumpMod {
-		return
-	}
-	if fi, err := os.Stat(p.Store.Path); err == nil {
+	if fi, err := os.Stat(s.store.Path); err == nil {
 		s.mod = fi.ModTime()
 	}
 }
 
-func (s *session) cached() (Pick, bool) {
-	if s.cfg.AuthPath == "" || s.pick.Store == nil {
-		return Pick{}, false
+func (s *session) cachedStore() *Store {
+	if s.cfg.AuthPath == "" || s.store == nil {
+		return nil
 	}
 	fi, err := os.Stat(s.cfg.AuthPath)
 	if err != nil {
-		return Pick{}, false
+		return nil
 	}
 	if fi.ModTime().After(s.mod) {
-		return Pick{}, false
+		return nil
 	}
-	p := s.pick
-	p.Token = p.Store.AccessToken()
-	p.Err = nil
-	return p, true
+	return s.store
 }
 
 func (s *session) load() Pick {
-	if p, ok := s.cached(); ok {
-		return p
+	if st := s.cachedStore(); st != nil {
+		return newPick(SourceFile, st.AccessToken(), s.cfg.OAuthUpstream, st, nil)
 	}
 	p := Resolve(s.cfg)
-	s.set(p, true)
+	s.setStore(p.Store)
+	s.noteDisk()
 	return p
 }
 
@@ -412,7 +414,10 @@ func (s *session) refresh(now time.Time, force bool) Pick {
 	s.refreshing = false
 	s.cond.Broadcast()
 	applyRefresh(&p, now, err)
-	s.set(p, err == nil)
+	s.setStore(p.Store)
+	if err == nil {
+		s.noteDisk()
+	}
 	s.mu.Unlock()
 	return p
 }

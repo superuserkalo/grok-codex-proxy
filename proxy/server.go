@@ -110,25 +110,6 @@ func withBearer(req *http.Request, token string) *http.Request {
 	return req2
 }
 
-func (s *server) recoverCLI(resp *http.Response, req *http.Request) (*http.Response, int, error) {
-	code := drain(resp)
-	p := s.sess.rotate(time.Now())
-	if p.Source != SourceFile || !retryable(req) {
-		return nil, code, nil
-	}
-	if st, _ := p.gate(); st != 0 {
-		return nil, code, nil
-	}
-	retry, err := s.doUpstream(withBearer(req, p.Token))
-	if err != nil {
-		return nil, 0, err
-	}
-	if !cliRejected(retry) {
-		return retry, 0, nil
-	}
-	return nil, drain(retry), nil
-}
-
 func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	status := 0
@@ -172,15 +153,26 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, "upstream error\n")
 		return
 	}
-	if p.CLI && cliRejected(resp) {
-		var code int
-		resp, code, err = s.recoverCLI(resp, req)
+	if p.CLI() && cliRejected(resp) {
+		code := drain(resp)
+		if p.Store != nil {
+			p = s.sess.rotate(time.Now())
+		}
+		if !retryable(req) || p.Store == nil {
+			fail(code, cliTokenRejected)
+			return
+		}
+		if st, _ := p.gate(); st != 0 {
+			fail(code, cliTokenRejected)
+			return
+		}
+		resp, err = s.doUpstream(withBearer(req, p.Token))
 		if err != nil {
 			fail(http.StatusBadGateway, "upstream error\n")
 			return
 		}
-		if resp == nil {
-			fail(code, cliTokenRejected)
+		if cliRejected(resp) {
+			fail(drain(resp), cliTokenRejected)
 			return
 		}
 	}
@@ -210,7 +202,7 @@ func (s *server) upstreamRequest(r *http.Request, p Pick, body []byte, model str
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+p.Token)
-	if p.CLI {
+	if p.CLI() {
 		req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
 		if model != "" {
 			req.Header.Set("x-grok-model-override", model)
