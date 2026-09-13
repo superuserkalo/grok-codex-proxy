@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/superuserkalo/grok-codex-proxy/proxy"
@@ -17,6 +19,16 @@ func writeAuth(t *testing.T, dir, body string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func officialJSON(fields ...string) string {
+	key := proxy.OfficialIssuer + "::" + proxy.OfficialClientID
+	return "{\n  " + strconv.Quote(key) + ": {\n    " + strings.Join(fields, ",\n    ") + "\n  }\n}"
+}
+
+func writeOfficial(t *testing.T, dir string, fields ...string) string {
+	t.Helper()
+	return writeAuth(t, dir, officialJSON(fields...))
 }
 
 func startUp(t *testing.T, h http.HandlerFunc) *httptest.Server {

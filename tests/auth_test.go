@@ -42,12 +42,7 @@ func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
 }
 
 func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "access_token": "alt-token",
-	    "oidc_issuer": "https://auth.x.ai"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"access_token": "alt-token"`, `"oidc_issuer": "https://auth.x.ai"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -59,12 +54,7 @@ func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
 
 func TestNeedsRefresh(t *testing.T) {
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "t",
-	    "expires_at": "2099-01-01T00:00:00Z"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"key": "t"`, `"expires_at": "2099-01-01T00:00:00Z"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -80,12 +70,7 @@ func TestNeedsRefresh(t *testing.T) {
 }
 
 func TestNeedsRefreshUnknownExpiryIsFalse(t *testing.T) {
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "access_token": "alt-token",
-	    "oidc_issuer": "https://auth.x.ai"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"access_token": "alt-token"`, `"oidc_issuer": "https://auth.x.ai"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -96,15 +81,7 @@ func TestNeedsRefreshUnknownExpiryIsFalse(t *testing.T) {
 }
 
 func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "old",
-	    "refresh_token": "r1",
-	    "expires_at": "2026-09-13T16:16:24Z",
-	    "email": "keep-me@example.com",
-	    "auth_mode": "oidc"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2026-09-13T16:16:24Z"`, `"email": "keep-me@example.com"`, `"auth_mode": "oidc"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -223,12 +200,7 @@ func TestResolveEmptyUpstreamsAreOrigins(t *testing.T) {
 }
 
 func TestResolveFileVsEnv(t *testing.T) {
-	auth := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "session-token",
-	    "expires_at": "2099-01-01T00:00:00Z"
-	  }
-	}`)
+	auth := writeOfficial(t, t.TempDir(), `"key": "session-token"`, `"expires_at": "2099-01-01T00:00:00Z"`)
 	p := proxy.Resolve(proxy.Config{
 		AuthPath:      auth,
 		APIKey:        "xai-x",
@@ -279,13 +251,7 @@ func TestRefreshPostsFormAndSaves(t *testing.T) {
 		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
 	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "old",
-	    "refresh_token": "r1",
-	    "expires_at": "2026-09-13T12:02:00Z"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2026-09-13T12:02:00Z"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -311,13 +277,7 @@ func TestRefreshRequiresExpiresIn(t *testing.T) {
 		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr"}`))
 	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "old",
-	    "refresh_token": "r1",
-	    "expires_at": "2026-09-13T12:02:00Z"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2026-09-13T12:02:00Z"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -368,13 +328,7 @@ func TestRefreshHonorsCanceledContext(t *testing.T) {
 		w.WriteHeader(200)
 	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	path := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "old",
-	    "refresh_token": "r1",
-	    "expires_at": "2026-09-13T12:02:00Z"
-	  }
-	}`)
+	path := writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2026-09-13T12:02:00Z"`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)

@@ -28,13 +28,8 @@ func TestHealthzAndForwardInjectsCLIHeaders(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "key": "session-token",
-		    "expires_at": "2099-01-01T00:00:00Z"
-		  }
-		}`),
-		HTTPClient: up.Client(),
+		AuthPath:      writeOfficial(t, t.TempDir(), `"key": "session-token"`, `"expires_at": "2099-01-01T00:00:00Z"`),
+		HTTPClient:    up.Client(),
 	})
 
 	res, err := http.Get(srv.URL + "/healthz")
@@ -106,12 +101,7 @@ func TestFileAppearsSwitchesOffAPIKey(t *testing.T) {
 		AuthPath:      auth,
 	})
 	wantStatus(t, srv.URL+"/v1/models", 200)
-	writeAuth(t, filepath.Dir(auth), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "session-token",
-	    "expires_at": "2099-01-01T00:00:00Z"
-	  }
-	}`)
+	writeOfficial(t, filepath.Dir(auth), `"key": "session-token"`, `"expires_at": "2099-01-01T00:00:00Z"`)
 	wantStatus(t, srv.URL+"/v1/models", 200)
 	mu.Lock()
 	defer mu.Unlock()
@@ -141,12 +131,7 @@ func TestDeletedFileFallsThroughToAPIKey(t *testing.T) {
 	}
 	api := startUp(t, hit)
 	cli := startUp(t, hit)
-	auth := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "session-token",
-	    "expires_at": "2099-01-01T00:00:00Z"
-	  }
-	}`)
+	auth := writeOfficial(t, t.TempDir(), `"key": "session-token"`, `"expires_at": "2099-01-01T00:00:00Z"`)
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: cli.URL,
 		APIUpstream:   api.URL,
@@ -180,12 +165,8 @@ func TestServeUsesTokenWithoutExpiry(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "access_token": "alt-token"
-		  }
-		}`),
-		HTTPClient: up.Client(),
+		AuthPath:      writeOfficial(t, t.TempDir(), `"access_token": "alt-token"`),
+		HTTPClient:    up.Client(),
 	})
 	wantStatus(t, srv.URL+"/v1/models", 200)
 }
@@ -220,13 +201,7 @@ func TestRefreshSaveFailureKeepsRotatedToken(t *testing.T) {
 		w.WriteHeader(200)
 	})
 	dir := t.TempDir()
-	auth := writeAuth(t, dir, `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "old",
-	    "refresh_token": "r1",
-	    "expires_at": "2020-01-01T00:00:00Z"
-	  }
-	}`)
+	auth := writeOfficial(t, dir, `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2020-01-01T00:00:00Z"`)
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
 		AuthPath:      auth,
@@ -265,14 +240,8 @@ func TestRefreshIgnoresRequestCancel(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "key": "old",
-		    "refresh_token": "r1",
-		    "expires_at": "2020-01-01T00:00:00Z"
-		  }
-		}`),
-		TokenURL: tok.URL,
+		AuthPath:      writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2020-01-01T00:00:00Z"`),
+		TokenURL:      tok.URL,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/v1/models", nil)
@@ -320,14 +289,8 @@ func TestRefreshSerializedOnConcurrentRequests(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "key": "old",
-		    "refresh_token": "r1",
-		    "expires_at": "2020-01-01T00:00:00Z"
-		  }
-		}`),
-		TokenURL: tok.URL,
+		AuthPath:      writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2020-01-01T00:00:00Z"`),
+		TokenURL:      tok.URL,
 	})
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
@@ -360,13 +323,7 @@ func TestRefreshFailInWindowReturns502(t *testing.T) {
 		w.WriteHeader(200)
 	})
 	exp := time.Now().UTC().Add(100 * time.Second).Format(time.RFC3339Nano)
-	auth := writeAuth(t, t.TempDir(), `{
-	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-	    "key": "live",
-	    "refresh_token": "r1",
-	    "expires_at": "`+exp+`"
-	  }
-	}`)
+	auth := writeOfficial(t, t.TempDir(), `"key": "live"`, `"refresh_token": "r1"`, `"expires_at": "`+exp+`"`)
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
 		AuthPath:      auth,
@@ -404,15 +361,9 @@ func TestRefreshFailHardExpiredReturns401(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "key": "old",
-		    "refresh_token": "r1",
-		    "expires_at": "2020-01-01T00:00:00Z"
-		  }
-		}`),
-		TokenURL:   tok.URL,
-		HTTPClient: up.Client(),
+		AuthPath:      writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2020-01-01T00:00:00Z"`),
+		TokenURL:      tok.URL,
+		HTTPClient:    up.Client(),
 	})
 	wantStatus(t, srv.URL+"/v1/models", http.StatusUnauthorized)
 }
@@ -437,14 +388,8 @@ func TestCLI401RetriesModelsGETAfterRefresh(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "key": "old",
-		    "refresh_token": "r1",
-		    "expires_at": "2099-01-01T00:00:00Z"
-		  }
-		}`),
-		TokenURL: tok.URL,
+		AuthPath:      writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2099-01-01T00:00:00Z"`),
+		TokenURL:      tok.URL,
 	})
 	wantStatus(t, srv.URL+"/v1/models", 200)
 	if refreshes.Load() != 1 {
@@ -468,14 +413,8 @@ func TestCLI401DoesNotReplayPOST(t *testing.T) {
 	})
 	srv := startProxy(t, proxy.Config{
 		OAuthUpstream: up.URL,
-		AuthPath: writeAuth(t, t.TempDir(), `{
-		  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
-		    "key": "old",
-		    "refresh_token": "r1",
-		    "expires_at": "2099-01-01T00:00:00Z"
-		  }
-		}`),
-		TokenURL: tok.URL,
+		AuthPath:      writeOfficial(t, t.TempDir(), `"key": "old"`, `"refresh_token": "r1"`, `"expires_at": "2099-01-01T00:00:00Z"`),
+		TokenURL:      tok.URL,
 	})
 	res, err := http.Post(srv.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"grok-4.6"}`))
 	if err != nil {
