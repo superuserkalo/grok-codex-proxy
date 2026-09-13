@@ -207,6 +207,13 @@ func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL s
 	if s == nil || !s.NeedsRefresh(now) {
 		return nil
 	}
+	return Refresh(ctx, s, client, tokenURL, now)
+}
+
+func Refresh(ctx context.Context, s *Store, client *http.Client, tokenURL string, now time.Time) error {
+	if s == nil {
+		return fmt.Errorf("%w: no session", ErrRefresh)
+	}
 	rt := s.RefreshToken()
 	if rt == "" {
 		return fmt.Errorf("%w: no refresh_token", ErrRefresh)

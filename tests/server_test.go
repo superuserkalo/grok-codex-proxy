@@ -575,6 +575,105 @@ func TestRefreshFailHardExpiredReturns401(t *testing.T) {
 	}
 }
 
+func TestCLI401RetriesModelsGETAfterRefresh(t *testing.T) {
+	var refreshes atomic.Int32
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshes.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
+	}))
+	t.Cleanup(tok.Close)
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := hits.Add(1)
+		if r.Header.Get("Authorization") == "Bearer old" {
+			w.WriteHeader(401)
+			return
+		}
+		if n == 1 {
+			t.Errorf("first hit should be the rejected token")
+		}
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2099-01-01T00:00:00Z"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		TokenURL:      tok.URL,
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if refreshes.Load() != 1 {
+		t.Fatalf("refresh calls=%d", refreshes.Load())
+	}
+	if hits.Load() != 2 {
+		t.Fatalf("upstream hits=%d", hits.Load())
+	}
+}
+
+func TestCLI401DoesNotReplayPOST(t *testing.T) {
+	var refreshes atomic.Int32
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshes.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
+	}))
+	t.Cleanup(tok.Close)
+	var hits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(401)
+	}))
+	t.Cleanup(up.Close)
+
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2099-01-01T00:00:00Z"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		TokenURL:      tok.URL,
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Post(srv.URL+"/v1/responses", "application/json", strings.NewReader(`{"model":"grok-4.6"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 401 {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("upstream hits=%d", hits.Load())
+	}
+	if refreshes.Load() != 1 {
+		t.Fatalf("refresh calls=%d", refreshes.Load())
+	}
+}
+
 func TestProxyAPIKeyGate(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

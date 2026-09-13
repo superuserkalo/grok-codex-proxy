@@ -167,15 +167,46 @@ func (s *server) bearer(now time.Time) Pick {
 	s.mu.Lock()
 	s.refreshing = false
 	s.cond.Broadcast()
+	s.commitStore(store, err)
+	s.applyRefresh(&p, now, err)
+	s.mu.Unlock()
+	return p
+}
+
+func (s *server) commitStore(store *Store, err error) {
 	s.mem = store
 	if err == nil {
 		if fi, e := os.Stat(store.Path); e == nil {
 			s.memMod = fi.ModTime()
 		}
 	}
-	s.applyRefresh(&p, now, err)
+}
+
+func (s *server) rotate(now time.Time) error {
+	s.mu.Lock()
+	for s.refreshing {
+		s.cond.Wait()
+	}
+	p := s.load()
+	if p.Store == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("run grok login")
+	}
+	s.refreshing = true
+	store := p.Store
 	s.mu.Unlock()
-	return p
+
+	err := Refresh(context.Background(), store, s.client(), s.tokenURL(), now)
+
+	s.mu.Lock()
+	s.refreshing = false
+	s.cond.Broadcast()
+	s.commitStore(store, err)
+	s.mu.Unlock()
+	if errors.Is(err, ErrPersist) {
+		return nil
+	}
+	return err
 }
 
 func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
@@ -255,8 +286,29 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusBadGateway, "upstream error\n")
 		return
 	}
+	if cli && (resp.StatusCode == 401 || resp.StatusCode == 403) {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		rotErr := s.rotate(time.Now())
+		retry := rotErr == nil && r.Method == http.MethodGet && r.URL.Path == "/v1/models"
+		if !retry {
+			fail(resp.StatusCode, "token rejected by the CLI proxy; run grok login or use XAI_API_KEY\n")
+			return
+		}
+		p = s.bearer(time.Now())
+		if p.Err != nil || p.Token == "" {
+			fail(http.StatusUnauthorized, "token rejected by the CLI proxy; run grok login or use XAI_API_KEY\n")
+			return
+		}
+		req2 := req.Clone(req.Context())
+		req2.Header.Set("Authorization", "Bearer "+p.Token)
+		resp, err = s.doUpstream(req2)
+		if err != nil {
+			fail(http.StatusBadGateway, "upstream error\n")
+			return
+		}
+	}
 	defer resp.Body.Close()
-
 	if cli && (resp.StatusCode == 401 || resp.StatusCode == 403) {
 		fail(resp.StatusCode, "token rejected by the CLI proxy; run grok login or use XAI_API_KEY\n")
 		return
