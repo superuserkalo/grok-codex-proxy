@@ -236,8 +236,8 @@ func TestResolveFileVsEnv(t *testing.T) {
 	if p.Err != nil || p.Source != proxy.SourceFile || p.Token != "session-token" || p.Store == nil {
 		t.Fatalf("file: %+v", p)
 	}
-	if p.Upstream != "https://cli.example/v1" || !p.CLI {
-		t.Fatalf("file upstream=%q cli=%t", p.Upstream, p.CLI)
+	if p.Upstream != "https://cli.example/v1" {
+		t.Fatalf("file upstream=%q", p.Upstream)
 	}
 
 	missing := filepath.Join(t.TempDir(), "auth.json")
@@ -250,8 +250,8 @@ func TestResolveFileVsEnv(t *testing.T) {
 	if p.Err != nil || p.Source != proxy.SourceAPIKey || p.Token != "xai-x" || p.Store != nil {
 		t.Fatalf("api: %+v", p)
 	}
-	if p.Upstream != "https://api.example/v1" || p.CLI {
-		t.Fatalf("api upstream=%q cli=%t", p.Upstream, p.CLI)
+	if p.Upstream != "https://api.example/v1" {
+		t.Fatalf("api upstream=%q", p.Upstream)
 	}
 
 	p = proxy.Resolve(proxy.Config{

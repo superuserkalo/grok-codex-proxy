@@ -30,7 +30,6 @@ type Pick struct {
 	Source   string
 	Token    string
 	Upstream string
-	CLI      bool
 	Store    *Store
 	Err      error
 }
@@ -43,26 +42,26 @@ func Resolve(cfg Config) Pick {
 		if err == nil {
 			st, err := LoadStore(cfg.AuthPath)
 			if err != nil {
-				return Pick{Source: SourceFile, Upstream: oauth, CLI: true, Err: err}
+				return Pick{Source: SourceFile, Upstream: oauth, Err: err}
 			}
-			return Pick{Source: SourceFile, Token: st.AccessToken(), Upstream: oauth, CLI: true, Store: st}
+			return Pick{Source: SourceFile, Token: st.AccessToken(), Upstream: oauth, Store: st}
 		}
 		if !os.IsNotExist(err) {
-			return Pick{Source: SourceFile, Upstream: oauth, CLI: true, Err: err}
+			return Pick{Source: SourceFile, Upstream: oauth, Err: err}
 		}
 		missing = err
 	}
 	if cfg.OAuthToken != "" {
-		return Pick{Source: SourceOAuthEnv, Token: cfg.OAuthToken, Upstream: oauth, CLI: true}
+		return Pick{Source: SourceOAuthEnv, Token: cfg.OAuthToken, Upstream: oauth}
 	}
 	if cfg.APIKey != "" {
-		return Pick{Source: SourceAPIKey, Token: cfg.APIKey, Upstream: api, CLI: false}
+		return Pick{Source: SourceAPIKey, Token: cfg.APIKey, Upstream: api}
 	}
 	err := fmt.Errorf("run grok login")
 	if missing != nil {
 		err = missing
 	}
-	return Pick{Source: SourceNone, Upstream: oauth, CLI: true, Err: err}
+	return Pick{Source: SourceNone, Upstream: oauth, Err: err}
 }
 
 type Store struct {

@@ -93,20 +93,26 @@ func (s *server) client() *http.Client {
 	return http.DefaultClient
 }
 
-func (s *server) bearer(ctx context.Context, now time.Time) (token, upstream string, cli bool, err error) {
+func (s *server) bearer(ctx context.Context, now time.Time) Pick {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := Resolve(s.cfg)
 	if p.Store != nil {
 		if err := RefreshIfDue(ctx, p.Store, s.client(), s.tokenURL(), now); err != nil {
-			return "", p.Upstream, p.CLI, err
+			p.Token = ""
+			p.Err = err
+			return p
 		}
 		if t := p.Store.AccessToken(); t != "" {
-			return t, p.Upstream, p.CLI, nil
+			p.Token = t
+			p.Err = nil
+			return p
 		}
-		return "", p.Upstream, p.CLI, fmt.Errorf("run grok login")
+		p.Token = ""
+		p.Err = fmt.Errorf("run grok login")
+		return p
 	}
-	return p.Token, p.Upstream, p.CLI, p.Err
+	return p
 }
 
 func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
@@ -127,11 +133,13 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
-	token, upstream, cli, err := s.bearer(r.Context(), time.Now())
-	if err != nil || token == "" {
+	p := s.bearer(r.Context(), time.Now())
+	if p.Err != nil || p.Token == "" {
 		fail(http.StatusUnauthorized, "run grok login\n")
 		return
 	}
+	token, upstream := p.Token, p.Upstream
+	cli := p.Source != SourceAPIKey
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
 	if err != nil {
 		fail(http.StatusBadRequest, "bad request\n")
