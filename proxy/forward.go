@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -17,10 +18,7 @@ func RewriteModel(body []byte) ([]byte, string) {
 	if mapped == raw {
 		return body, mapped
 	}
-	quoted, err := json.Marshal(mapped)
-	if err != nil {
-		return body, mapped
-	}
+	quoted := strconv.Quote(mapped)
 	out := make([]byte, 0, len(body)+len(quoted)-(end-start))
 	out = append(out, body[:start]...)
 	out = append(out, quoted...)

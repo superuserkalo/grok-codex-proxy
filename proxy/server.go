@@ -214,9 +214,6 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 	status := 0
 	model := ""
 	defer func() {
-		if status == 0 {
-			status = 200
-		}
 		log.Printf("%s %s %d %s model=%s", r.Method, r.URL.Path, status, time.Since(start).Truncate(time.Millisecond), model)
 	}()
 	fail := func(code int, msg string) {
