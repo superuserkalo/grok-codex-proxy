@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -150,8 +151,14 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 	}
 	token, upstream := p.Token, p.Upstream
 	cli := p.Source != SourceAPIKey
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			fail(http.StatusRequestEntityTooLarge, "request too large\n")
+			return
+		}
 		fail(http.StatusBadRequest, "bad request\n")
 		return
 	}

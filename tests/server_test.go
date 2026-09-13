@@ -436,6 +436,34 @@ func TestResponsesPOSTDoesNotRetry429(t *testing.T) {
 	}
 }
 
+func TestOversizedBodyReturns413(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("upstream should not be called")
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	mux := proxy.NewMux(proxy.Config{
+		APIUpstream: up.URL,
+		APIKey:      "xai-x",
+		AuthPath:    filepath.Join(t.TempDir(), "auth.json"),
+		HTTPClient:  up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	body := strings.Repeat("x", 32<<20+1)
+	res, err := http.Post(srv.URL+"/v1/responses", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status=%d body=%s", res.StatusCode, b)
+	}
+}
+
 func TestListenAddrBracketsIPv6(t *testing.T) {
 	cfg := proxy.Config{Host: "::1", Port: 8787}
 	if got := cfg.ListenAddr(); got != "[::1]:8787" {
