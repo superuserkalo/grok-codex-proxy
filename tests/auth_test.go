@@ -44,9 +44,6 @@ func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
 	if s.RefreshToken() != "refresh-me" {
 		t.Fatalf("refresh=%q", s.RefreshToken())
 	}
-	if s.Get("email") != "keep-me@example.com" {
-		t.Fatalf("email not preserved: %q", s.Get("email"))
-	}
 }
 
 func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
@@ -127,8 +124,12 @@ func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
 	if s2.AccessToken() != "new-access" || s2.RefreshToken() != "r2" {
 		t.Fatal("tokens not updated")
 	}
-	if s2.Get("email") != "keep-me@example.com" || s2.Get("auth_mode") != "oidc" {
-		t.Fatal("unknown fields dropped")
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(saved), "keep-me@example.com") || !strings.Contains(string(saved), `"auth_mode": "oidc"`) {
+		t.Fatalf("unknown fields dropped: %s", saved)
 	}
 	st, err := os.Stat(path)
 	if err != nil {

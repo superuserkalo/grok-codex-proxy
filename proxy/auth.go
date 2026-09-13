@@ -71,7 +71,7 @@ func (s *Store) entry() map[string]any {
 	return s.entries[s.chosen]
 }
 
-func (s *Store) Get(field string) string {
+func (s *Store) get(field string) string {
 	e := s.entry()
 	if e == nil {
 		return ""
@@ -81,16 +81,16 @@ func (s *Store) Get(field string) string {
 }
 
 func (s *Store) AccessToken() string {
-	if t := s.Get("key"); t != "" {
+	if t := s.get("key"); t != "" {
 		return t
 	}
-	return s.Get("access_token")
+	return s.get("access_token")
 }
 
-func (s *Store) RefreshToken() string { return s.Get("refresh_token") }
+func (s *Store) RefreshToken() string { return s.get("refresh_token") }
 
 func (s *Store) ExpiresAt() (time.Time, bool) {
-	raw := s.Get("expires_at")
+	raw := s.get("expires_at")
 	if raw == "" {
 		return time.Time{}, false
 	}
