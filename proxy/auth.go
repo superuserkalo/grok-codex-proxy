@@ -100,14 +100,8 @@ func (s *Store) pick() error {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if strings.HasPrefix(k, OfficialIssuer) {
-			s.chosen = k
-			return nil
-		}
-	}
-	for _, k := range keys {
-		iss, _ := s.entries[k]["oidc_issuer"].(string)
-		if strings.Contains(iss, "auth.x.ai") {
+		iss, _, ok := strings.Cut(k, "::")
+		if ok && iss == OfficialIssuer {
 			s.chosen = k
 			return nil
 		}

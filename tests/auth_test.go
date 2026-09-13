@@ -164,6 +164,42 @@ func TestLoadStorePrefixBeatsIssuerContains(t *testing.T) {
 	}
 }
 
+func TestLoadStoreRejectsIssuerContainsOnly(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	body := `{
+	  "aaa-forged": {
+	    "key": "forged",
+	    "oidc_issuer": "https://evil.example/auth.x.ai"
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := proxy.LoadStore(path); err == nil {
+		t.Fatal("expected no session")
+	}
+}
+
+func TestLoadStoreRejectsLookalikeIssuerPrefix(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	body := `{
+	  "https://auth.x.ai.evil::abc": { "key": "evil" },
+	  "https://auth.x.ai::other-client": { "key": "real" }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Entry() != "https://auth.x.ai::other-client" || s.AccessToken() != "real" {
+		t.Fatalf("entry=%q token=%q", s.Entry(), s.AccessToken())
+	}
+}
+
 func TestLoadStorePrefixChoiceIsSorted(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "auth.json")
