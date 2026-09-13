@@ -10,7 +10,7 @@ Access token: `key`, else `access_token`. Also `refresh_token`, `expires_at`, pl
 
 ## Refresh
 
-About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` with `grant_type=refresh_token` and `client_id` from the chosen `issuer::client_id` key. The token response must include `access_token` and a positive `expires_in`; missing `expires_in` is an error and does not rewrite `auth.json`. The refresh HTTP call uses the request context with a 15s cap. Atomic write (temp + rename), mode `0600`. Happens before the upstream call so a live SSE is not killed.
+About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` with `grant_type=refresh_token` and `client_id` from the chosen `issuer::client_id` key. The token response must include `access_token` and a positive `expires_in`; missing `expires_in` is an error and does not rewrite `auth.json`. Missing `expires_at` with a non-empty token is live (no refresh). The refresh HTTP call uses a background 15s timeout, not the inbound request context, and is serialized so one Codex disconnect cannot abort a shared rotation. Token-endpoint success is kept in process even if the atomic write (temp + rename, mode `0600`) fails. Happens before the upstream call so a live SSE is not killed. In-window refresh failure is 502 with the real cause; a hard-expired session with no usable token is 401. A CLI 401/403 forces a refresh; GET `/v1/models` retries once, POST is not replayed.
 
 ## Credential order
 
@@ -20,6 +20,6 @@ About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` wit
 
 `GROK_CLI_CHAT_PROXY_BASE_URL` overrides the OAuth/CLI host only. `XAI_BASE_URL` overrides the API host only. Trailing `/v1` on either base is stripped; request paths already include `/v1/...`.
 
-If the file exists but cannot yield a token, `serve` returns 401 (`run grok login`) and `status` exits nonzero. Neither falls through to an API key. `status` and `serve` use this same cascade, including which upstream and headers a request gets.
+If the file exists but cannot yield a token, `serve` returns 401 and `status` exits nonzero. Neither falls through to an API key. `status` and `serve` use this same cascade, including which upstream and headers a request gets. Bodies over 32MiB return 413.
 
 There is no `proxy login`. Use `grok login` or `grok login --device-auth`.

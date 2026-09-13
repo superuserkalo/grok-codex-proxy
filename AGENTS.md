@@ -34,8 +34,10 @@ CI (`.github/workflows/test.yml`): `gofmt`, `go vet`, `go test ./...`. Do not ad
 - Never log tokens or `auth.json`. Never copy `~/.grok/auth.json` into the repo.
 - Commands: `status`, `serve` (`--host`, `--port`, `--no-write-config`). Routes: GET `/healthz`, GET `/v1/models`, POST `/v1/responses`, POST `/v1/chat/completions`.
 - Thin forward: rewrite only the model slug (leave other JSON bytes intact), inject upstream headers, pass the body through, `Flush` SSE. Do not parse tool-call JSON.
-- One credential cascade for `status` and `serve` (file, `GROK_OAUTH_TOKEN`, `XAI_API_KEY`). That pick selects token, upstream, and CLI headers together. Refresh under the server lock.
-- Retry only GET `/v1/models` on 429 / transient 5xx. Never retry POST streams.
+- One credential cascade for `status` and `serve` (file, `GROK_OAUTH_TOKEN`, `XAI_API_KEY`). That pick selects token, upstream, and CLI headers together (`Pick.CLI`).
+- Serialize refresh. The token HTTP call uses a background 15s timeout, not the inbound request context, and does not hold the mutex. A rotated session stays in process if `auth.json` save fails, until the file mtime is newer.
+- No creds / hard-expired session → 401. In-window refresh transport failure → 502. Body over 32MiB → 413.
+- Retry GET `/v1/models` on 429 / transient 5xx, and once after a CLI 401/403 rotation. Never replay POST streams.
 - Default bind `127.0.0.1:8787`. Refuse off-loopback unless `PROXY_API_KEY` is set.
 - `serve` upserts `[model_providers.xai-oauth]` only: replace that table until the next `[` header, or append. No TOML encoder round-trip. Do not change top-level `model` / `model_provider`.
 - Do not add `login`, images, video, TTS, telemetry, or a protocol translator unless a live Codex run proves a mismatch.

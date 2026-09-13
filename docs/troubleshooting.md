@@ -4,7 +4,11 @@
 
 **Expired refresh.** If refresh returns HTTP 4xx, the refresh token is dead. `grok login` again.
 
-**401/403 from the CLI proxy.** The session is not accepted. `grok login`, or use `XAI_API_KEY` (API billing, not subscription). This proxy does not guess other hosts.
+**502 on `/v1/*` with a `token refresh` body.** The session is still in its skew window but the token endpoint failed. Retry; this is not “run grok login” unless `status` shows a hard-expired session.
+
+**401/403 from the CLI proxy.** The session was rejected. The proxy forces a refresh and retries GET `/v1/models` once. POST is not replayed. If it still 401s, `grok login`, or use `XAI_API_KEY` (API billing, not subscription). This proxy does not guess other hosts.
+
+**413 request too large.** The JSON body exceeded 32MiB. Shrink the request; the proxy does not forward a truncated prefix.
 
 **426 / “Grok CLI version (none) is outdated”.** The CLI proxy requires `x-grok-client-version`. This proxy sends it from `~/.grok/version.json` (or `GROK_CLIENT_VERSION`). Install/update the official `grok` CLI if that file is missing.
 
