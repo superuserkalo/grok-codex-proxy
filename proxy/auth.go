@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,13 +28,26 @@ var (
 	ErrPersist = errors.New("auth persist")
 )
 
+type Source string
+
+const (
+	SourceNone  Source = ""
+	SourceFile  Source = "file"
+	SourceOAuth Source = "oauth-env"
+	SourceAPI   Source = "api-key"
+)
+
 type Pick struct {
 	Token    string
 	Upstream string
 	CLI      bool
-	HadFile  bool
+	Source   Source
 	Store    *Store
 	Err      error
+}
+
+func newPick(src Source, token, upstream string, st *Store, err error) Pick {
+	return Pick{Token: token, Upstream: upstream, CLI: src != SourceAPI, Source: src, Store: st, Err: err}
 }
 
 func Resolve(cfg Config) Pick {
@@ -41,30 +55,40 @@ func Resolve(cfg Config) Pick {
 	oauth, api := cfg.OAuthUpstream, cfg.APIUpstream
 	var missing error
 	if cfg.AuthPath != "" {
-		_, err := os.Stat(cfg.AuthPath)
+		st, err := LoadStore(cfg.AuthPath)
 		if err == nil {
-			st, err := LoadStore(cfg.AuthPath)
-			if err != nil {
-				return Pick{CLI: true, HadFile: true, Upstream: oauth, Err: err}
-			}
-			return Pick{CLI: true, HadFile: true, Token: st.AccessToken(), Upstream: oauth, Store: st}
+			return newPick(SourceFile, st.AccessToken(), oauth, st, nil)
 		}
 		if !os.IsNotExist(err) {
-			return Pick{CLI: true, HadFile: true, Upstream: oauth, Err: err}
+			return newPick(SourceFile, "", oauth, nil, err)
 		}
 		missing = err
 	}
 	if cfg.OAuthToken != "" {
-		return Pick{CLI: true, Token: cfg.OAuthToken, Upstream: oauth}
+		return newPick(SourceOAuth, cfg.OAuthToken, oauth, nil, nil)
 	}
 	if cfg.APIKey != "" {
-		return Pick{Token: cfg.APIKey, Upstream: api}
+		return newPick(SourceAPI, cfg.APIKey, api, nil, nil)
 	}
 	err := fmt.Errorf("run grok login")
 	if missing != nil {
 		err = missing
 	}
-	return Pick{CLI: true, Upstream: oauth, Err: err}
+	return newPick(SourceNone, "", oauth, nil, err)
+}
+
+func (p Pick) gate() (int, string) {
+	if p.Err == nil && p.Token != "" {
+		return 0, ""
+	}
+	msg := "run grok login\n"
+	if p.Err != nil {
+		msg = p.Err.Error() + "\n"
+	}
+	if p.Err != nil && p.Token != "" {
+		return http.StatusBadGateway, msg
+	}
+	return http.StatusUnauthorized, msg
 }
 
 type Store struct {
@@ -287,7 +311,7 @@ func applyRefresh(p *Pick, now time.Time, err error) {
 			return
 		}
 		p.Token, p.Err = "", fmt.Errorf("run grok login")
-	case tok != "" && p.Store != nil && !p.Store.HardExpired(now):
+	case tok != "" && !p.Store.HardExpired(now):
 		p.Token, p.Err = tok, err
 	default:
 		p.Token, p.Err = "", err
@@ -300,4 +324,95 @@ func (s *Store) clientID() string {
 		return id
 	}
 	return OfficialClientID
+}
+
+type session struct {
+	cfg        Config
+	mu         sync.Mutex
+	cond       *sync.Cond
+	refreshing bool
+	pick       Pick
+	mod        time.Time
+}
+
+func newSession(cfg Config) *session {
+	s := &session{cfg: cfg.prepared()}
+	s.cond = sync.NewCond(&s.mu)
+	return s
+}
+
+func (s *session) set(p Pick, bumpMod bool) {
+	s.pick = p
+	if p.Store == nil {
+		s.mod = time.Time{}
+		return
+	}
+	if !bumpMod {
+		return
+	}
+	if fi, err := os.Stat(p.Store.Path); err == nil {
+		s.mod = fi.ModTime()
+	}
+}
+
+func (s *session) cached() (Pick, bool) {
+	if s.cfg.AuthPath == "" || s.pick.Store == nil {
+		return Pick{}, false
+	}
+	fi, err := os.Stat(s.cfg.AuthPath)
+	if err != nil {
+		return Pick{}, false
+	}
+	if fi.ModTime().After(s.mod) {
+		return Pick{}, false
+	}
+	p := s.pick
+	p.Token = p.Store.AccessToken()
+	p.Err = nil
+	return p, true
+}
+
+func (s *session) load() Pick {
+	if p, ok := s.cached(); ok {
+		return p
+	}
+	p := Resolve(s.cfg)
+	s.set(p, true)
+	return p
+}
+
+func (s *session) live(now time.Time) Pick {
+	return s.refresh(now, false)
+}
+
+func (s *session) rotate(now time.Time) Pick {
+	return s.refresh(now, true)
+}
+
+func (s *session) refresh(now time.Time, force bool) Pick {
+	s.mu.Lock()
+	for s.refreshing {
+		s.cond.Wait()
+	}
+	p := s.load()
+	if force && p.Store != nil {
+		p.Store.markStale()
+	}
+	if p.Store == nil || !p.Store.NeedsRefresh(now) {
+		s.mu.Unlock()
+		return p
+	}
+	s.refreshing = true
+	store := p.Store
+	s.mu.Unlock()
+
+	err := Refresh(context.Background(), store, s.cfg.HTTPClient, s.cfg.TokenURL, now)
+
+	s.mu.Lock()
+	s.refreshing = false
+	s.cond.Broadcast()
+	applyRefresh(&p, now, err)
+	s.set(p, err == nil)
+	s.mu.Unlock()
+	return p
 }

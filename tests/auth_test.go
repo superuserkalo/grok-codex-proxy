@@ -180,7 +180,7 @@ func TestResolveOAuthEnvSetsCLI(t *testing.T) {
 		APIUpstream:   "https://api.example/v1",
 		APIKey:        "xai-x",
 	})
-	if p.Err != nil || !p.CLI || p.HadFile || p.Token != "env-tok" || p.Store != nil {
+	if p.Err != nil || !p.CLI || p.Source != proxy.SourceOAuth || p.Token != "env-tok" || p.Store != nil {
 		t.Fatalf("oauth-env: %+v", p)
 	}
 	if p.Upstream != "https://cli.example" {
@@ -207,7 +207,7 @@ func TestResolveFileVsEnv(t *testing.T) {
 		OAuthUpstream: "https://cli.example/v1",
 		APIUpstream:   "https://api.example/v1",
 	})
-	if p.Err != nil || !p.CLI || !p.HadFile || p.Token != "session-token" || p.Store == nil {
+	if p.Err != nil || !p.CLI || p.Source != proxy.SourceFile || p.Token != "session-token" || p.Store == nil {
 		t.Fatalf("file: %+v", p)
 	}
 	if p.Upstream != "https://cli.example" {
@@ -221,7 +221,7 @@ func TestResolveFileVsEnv(t *testing.T) {
 		OAuthUpstream: "https://cli.example/v1",
 		APIUpstream:   "https://api.example/v1",
 	})
-	if p.Err != nil || p.CLI || p.HadFile || p.Token != "xai-x" || p.Store != nil {
+	if p.Err != nil || p.CLI || p.Source != proxy.SourceAPI || p.Token != "xai-x" || p.Store != nil {
 		t.Fatalf("api: %+v", p)
 	}
 	if p.Upstream != "https://api.example" {
@@ -234,7 +234,7 @@ func TestResolveFileVsEnv(t *testing.T) {
 		OAuthUpstream: "https://cli.example/v1",
 		APIUpstream:   "https://api.example/v1",
 	})
-	if p.Err == nil || !p.CLI || !p.HadFile || p.Token != "" || p.Store != nil {
+	if p.Err == nil || !p.CLI || p.Source != proxy.SourceFile || p.Token != "" || p.Store != nil {
 		t.Fatalf("corrupt: %+v", p)
 	}
 	if p.Upstream != "https://cli.example" {

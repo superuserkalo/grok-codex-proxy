@@ -84,7 +84,7 @@ func cmdStatus() int {
 			fmt.Println("expires_at=unknown")
 		}
 		fmt.Printf("needs_refresh=%t\n", p.Store.NeedsRefresh(time.Now()))
-	} else if !p.HadFile {
+	} else if p.Source != proxy.SourceFile {
 		fmt.Println("session=none")
 		if p.Token != "" {
 			fmt.Println("fallback=env")
@@ -92,7 +92,7 @@ func cmdStatus() int {
 	}
 	if p.Err != nil {
 		fmt.Printf("error=%s\n", p.Err)
-		if p.HadFile {
+		if p.Source == proxy.SourceFile {
 			fmt.Printf("upstream=%s\n", p.Upstream)
 		}
 		return 1
