@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -294,7 +295,7 @@ func TestRefreshIfDuePostsFormAndSaves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := proxy.RefreshIfDue(s, ts.Client(), ts.URL, now); err != nil {
+	if err := proxy.RefreshIfDue(context.Background(), s, ts.Client(), ts.URL, now); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, "grant_type=refresh_token") || !strings.Contains(gotBody, "refresh_token=r1") {
@@ -333,7 +334,7 @@ func TestRefreshIfDueRequiresExpiresIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := proxy.RefreshIfDue(s, ts.Client(), ts.URL, now); err == nil {
+	if err := proxy.RefreshIfDue(context.Background(), s, ts.Client(), ts.URL, now); err == nil {
 		t.Fatal("expected error")
 	}
 	s2, err := proxy.LoadStore(path)
@@ -372,10 +373,48 @@ func TestRefreshIfDueUsesChosenClientID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := proxy.RefreshIfDue(s, ts.Client(), ts.URL, now); err != nil {
+	if err := proxy.RefreshIfDue(context.Background(), s, ts.Client(), ts.URL, now); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, "client_id=other-client") {
 		t.Fatalf("form=%q", gotBody)
+	}
+}
+
+func TestRefreshIfDueHonorsCanceledContext(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("token endpoint should not be called")
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(ts.Close)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	body := `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2026-09-13T12:02:00Z"
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := proxy.RefreshIfDue(ctx, s, ts.Client(), ts.URL, now); err == nil {
+		t.Fatal("expected error")
+	}
+	s2, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.AccessToken() != "old" {
+		t.Fatalf("token=%q", s2.AccessToken())
 	}
 }

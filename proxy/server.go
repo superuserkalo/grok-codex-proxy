@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -92,12 +93,12 @@ func (s *server) client() *http.Client {
 	return http.DefaultClient
 }
 
-func (s *server) bearer(now time.Time) (token, upstream string, cli bool, err error) {
+func (s *server) bearer(ctx context.Context, now time.Time) (token, upstream string, cli bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p := Resolve(s.cfg)
 	if p.Store != nil {
-		if err := RefreshIfDue(p.Store, s.client(), s.tokenURL(), now); err != nil {
+		if err := RefreshIfDue(ctx, p.Store, s.client(), s.tokenURL(), now); err != nil {
 			return "", p.Upstream, p.CLI, err
 		}
 		if t := p.Store.AccessToken(); t != "" {
@@ -126,7 +127,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
-	token, upstream, cli, err := s.bearer(time.Now())
+	token, upstream, cli, err := s.bearer(r.Context(), time.Now())
 	if err != nil || token == "" {
 		fail(http.StatusUnauthorized, "run grok login\n")
 		return

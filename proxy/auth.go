@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ const (
 	OfficialIssuer   = "https://auth.x.ai"
 	OfficialClientID = "b1a00492-073a-47ea-816f-4c329264a828"
 	RefreshSkew      = 300 * time.Second
+	RefreshTimeout   = 15 * time.Second
 	TokenURL         = "https://auth.x.ai/oauth2/token"
 
 	SourceFile     = "file"
@@ -191,7 +193,7 @@ func (s *Store) Save() error {
 	return WriteAtomic(s.Path, b)
 }
 
-func RefreshIfDue(s *Store, client *http.Client, tokenURL string, now time.Time) error {
+func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL string, now time.Time) error {
 	if s == nil || !s.NeedsRefresh(now) {
 		return nil
 	}
@@ -207,7 +209,14 @@ func RefreshIfDue(s *Store, client *http.Client, tokenURL string, now time.Time)
 		"refresh_token": {rt},
 		"client_id":     {s.clientID()},
 	}
-	resp, err := client.PostForm(tokenURL, form)
+	ctx, cancel := context.WithTimeout(ctx, RefreshTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
