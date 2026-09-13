@@ -242,6 +242,36 @@ func TestDeletedFileFallsThroughToAPIKey(t *testing.T) {
 	}
 }
 
+func TestServeUsesTokenWithoutExpiry(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer alt-token" {
+			t.Errorf("auth=%q", r.Header.Get("Authorization"))
+		}
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "access_token": "alt-token"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		HTTPClient:    up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+}
+
 func TestCorruptFileDoesNotFallThroughToAPIKey(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("upstream should not be called")

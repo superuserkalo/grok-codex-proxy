@@ -155,7 +155,7 @@ func (s *Store) ExpiresAt() (time.Time, bool) {
 func (s *Store) NeedsRefresh(now time.Time) bool {
 	exp, ok := s.ExpiresAt()
 	if !ok {
-		return true
+		return false
 	}
 	return !now.Before(exp.Add(-RefreshSkew))
 }

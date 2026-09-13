@@ -95,6 +95,27 @@ func TestNeedsRefresh(t *testing.T) {
 	}
 }
 
+func TestNeedsRefreshUnknownExpiryIsFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	body := `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "access_token": "alt-token",
+	    "oidc_issuer": "https://auth.x.ai"
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.NeedsRefresh(time.Now()) {
+		t.Fatal("missing expires_at should not force refresh")
+	}
+}
+
 func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "auth.json")
