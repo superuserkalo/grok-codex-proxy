@@ -12,4 +12,4 @@
 
 **Port in use.** `grok-codex-proxy serve --port 8788` and check the `base_url` it wrote.
 
-**Non-loopback refused.** Set `PROXY_API_KEY` (and `GROK_CODEX_PROXY_KEY` to the same value) or bind `127.0.0.1`.
+**Non-loopback refused.** Set `PROXY_API_KEY` or bind `127.0.0.1`.

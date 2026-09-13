@@ -180,7 +180,7 @@ func writeCodexConfig(host string, port int, gate bool) error {
 	base := fmt.Sprintf("http://%s:%d/v1", host, port)
 	envKey := ""
 	if gate {
-		envKey = "GROK_CODEX_PROXY_KEY"
+		envKey = "PROXY_API_KEY"
 	}
 	return proxy.WriteAtomic(path, []byte(proxy.UpsertProvider(src, base, envKey)))
 }

@@ -9,11 +9,10 @@ base_url = "http://127.0.0.1:8787/v1"
 wire_api = "responses"
 ```
 
-If `PROXY_API_KEY` is set, it also writes `env_key = "GROK_CODEX_PROXY_KEY"`. Export that to the same value:
+If `PROXY_API_KEY` is set, it also writes `env_key = "PROXY_API_KEY"`. Codex and the proxy then share that one variable:
 
 ```bash
 export PROXY_API_KEY=...
-export GROK_CODEX_PROXY_KEY="$PROXY_API_KEY"
 ```
 
 The proxy does not change top-level `model` or `model_provider`. Keep your existing default. Invoke Grok with:

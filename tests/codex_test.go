@@ -23,7 +23,7 @@ func TestUpsertProviderInsertsAndReplacesWithoutTouchingModel(t *testing.T) {
 		t.Fatalf("unexpected env_key:\n%s", got)
 	}
 
-	got2 := proxy.UpsertProvider(got, "http://127.0.0.1:9999/v1", "GROK_CODEX_PROXY_KEY")
+	got2 := proxy.UpsertProvider(got, "http://127.0.0.1:9999/v1", "PROXY_API_KEY")
 	if count := strings.Count(got2, "[model_providers.xai-oauth]"); count != 1 {
 		t.Fatalf("tables=%d\n%s", count, got2)
 	}
@@ -33,7 +33,7 @@ func TestUpsertProviderInsertsAndReplacesWithoutTouchingModel(t *testing.T) {
 	if strings.Contains(got2, "8787") {
 		t.Fatalf("old port lingered:\n%s", got2)
 	}
-	if !strings.Contains(got2, `env_key = "GROK_CODEX_PROXY_KEY"`) {
+	if !strings.Contains(got2, `env_key = "PROXY_API_KEY"`) {
 		t.Fatalf("env_key missing:\n%s", got2)
 	}
 	if !strings.Contains(got2, "model = \"gpt-6-astra\"") {
