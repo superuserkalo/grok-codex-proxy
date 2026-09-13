@@ -139,7 +139,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token, upstream := p.Token, p.Upstream
-	cli := p.Source != SourceAPIKey
+	cli := p.CLI
 	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {

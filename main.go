@@ -84,15 +84,15 @@ func cmdStatus() int {
 			fmt.Println("expires_at=unknown")
 		}
 		fmt.Printf("needs_refresh=%t\n", p.Store.NeedsRefresh(time.Now()))
-	} else if p.Source != proxy.SourceFile {
+	} else if !p.HadFile {
 		fmt.Println("session=none")
-		if p.Source == proxy.SourceOAuthEnv || p.Source == proxy.SourceAPIKey {
+		if p.Token != "" {
 			fmt.Println("fallback=env")
 		}
 	}
 	if p.Err != nil {
 		fmt.Printf("error=%s\n", p.Err)
-		if p.Source == proxy.SourceFile {
+		if p.HadFile {
 			fmt.Printf("upstream=%s\n", p.Upstream)
 		}
 		return 1

@@ -19,17 +19,13 @@ const (
 	RefreshSkew      = 300 * time.Second
 	RefreshTimeout   = 15 * time.Second
 	TokenURL         = "https://auth.x.ai/oauth2/token"
-
-	SourceFile     = "file"
-	SourceOAuthEnv = "oauth-env"
-	SourceAPIKey   = "api-key"
-	SourceNone     = "none"
 )
 
 type Pick struct {
-	Source   string
 	Token    string
 	Upstream string
+	CLI      bool
+	HadFile  bool
 	Store    *Store
 	Err      error
 }
@@ -43,26 +39,26 @@ func Resolve(cfg Config) Pick {
 		if err == nil {
 			st, err := LoadStore(cfg.AuthPath)
 			if err != nil {
-				return Pick{Source: SourceFile, Upstream: oauth, Err: err}
+				return Pick{CLI: true, HadFile: true, Upstream: oauth, Err: err}
 			}
-			return Pick{Source: SourceFile, Token: st.AccessToken(), Upstream: oauth, Store: st}
+			return Pick{CLI: true, HadFile: true, Token: st.AccessToken(), Upstream: oauth, Store: st}
 		}
 		if !os.IsNotExist(err) {
-			return Pick{Source: SourceFile, Upstream: oauth, Err: err}
+			return Pick{CLI: true, HadFile: true, Upstream: oauth, Err: err}
 		}
 		missing = err
 	}
 	if cfg.OAuthToken != "" {
-		return Pick{Source: SourceOAuthEnv, Token: cfg.OAuthToken, Upstream: oauth}
+		return Pick{CLI: true, Token: cfg.OAuthToken, Upstream: oauth}
 	}
 	if cfg.APIKey != "" {
-		return Pick{Source: SourceAPIKey, Token: cfg.APIKey, Upstream: api}
+		return Pick{Token: cfg.APIKey, Upstream: api}
 	}
 	err := fmt.Errorf("run grok login")
 	if missing != nil {
 		err = missing
 	}
-	return Pick{Source: SourceNone, Upstream: oauth, Err: err}
+	return Pick{CLI: true, Upstream: oauth, Err: err}
 }
 
 type Store struct {
