@@ -44,6 +44,7 @@ OAuth / SuperGrok traffic goes through `https://cli-chat-proxy.grok.com/v1` and 
 - Never logs access tokens, refresh tokens, or `auth.json`.
 - Writes `auth.json` and new Codex config files with mode `0600`.
 - Does not copy `~/.grok/auth.json` anywhere.
+- Report token-handling bugs privately via [GitHub security advisories](https://github.com/superuserkalo/grok-codex-proxy/security/advisories/new), not a public issue.
 
 ## Verify
 
@@ -62,6 +63,9 @@ codex -c model_provider="xai-oauth" -m grok-4.6 "reply with the word pong"
 - [Codex config](docs/codex.md)
 - [Auth](docs/auth.md)
 - [Troubleshooting](docs/troubleshooting.md)
-- [Design](docs/design.md)
+
+## Contributing
+
+Stay inside the README surface. Run `go test ./...`. Feature ideas outside that surface will be closed.
 
 MIT licensed.
