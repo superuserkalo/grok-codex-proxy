@@ -153,9 +153,6 @@ func serveConfig(auth string) proxy.Config {
 }
 
 func oauthUpstream() string {
-	if v := os.Getenv("XAI_BASE_URL"); v != "" {
-		return v
-	}
 	if v := os.Getenv("GROK_CLI_CHAT_PROXY_BASE_URL"); v != "" {
 		return v
 	}

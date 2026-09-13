@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/superuserkalo/grok-codex-proxy/proxy"
 )
 
 func TestWriteCodexConfigIPv6AndProxyAPIKey(t *testing.T) {
@@ -26,5 +28,28 @@ func TestWriteCodexConfigIPv6AndProxyAPIKey(t *testing.T) {
 	}
 	if strings.Contains(got, "GROK_CODEX_PROXY_KEY") {
 		t.Fatalf("old env name:\n%s", got)
+	}
+}
+
+func TestOAuthUpstreamIgnoresXAIBaseURL(t *testing.T) {
+	t.Setenv("XAI_BASE_URL", "https://api.example/v1")
+	t.Setenv("GROK_CLI_CHAT_PROXY_BASE_URL", "")
+	if got := oauthUpstream(); got != proxy.DefaultOAuthUpstream {
+		t.Fatalf("oauthUpstream=%q", got)
+	}
+}
+
+func TestAPIUpstreamUsesXAIBaseURL(t *testing.T) {
+	t.Setenv("XAI_BASE_URL", "https://api.example/v1")
+	if got := apiUpstream(); got != "https://api.example/v1" {
+		t.Fatalf("apiUpstream=%q", got)
+	}
+}
+
+func TestOAuthUpstreamUsesCLIBaseURL(t *testing.T) {
+	t.Setenv("XAI_BASE_URL", "https://api.example/v1")
+	t.Setenv("GROK_CLI_CHAT_PROXY_BASE_URL", "https://cli.example/v1")
+	if got := oauthUpstream(); got != "https://cli.example/v1" {
+		t.Fatalf("oauthUpstream=%q", got)
 	}
 }
