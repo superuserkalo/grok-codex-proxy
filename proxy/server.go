@@ -99,6 +99,12 @@ func (s *server) bearer(ctx context.Context, now time.Time) Pick {
 	p := Resolve(s.cfg)
 	if p.Store != nil {
 		if err := RefreshIfDue(ctx, p.Store, s.client(), s.tokenURL(), now); err != nil {
+			tok := p.Store.AccessToken()
+			if tok != "" && !p.Store.HardExpired(now) {
+				p.Token = tok
+				p.Err = err
+				return p
+			}
 			p.Token = ""
 			p.Err = err
 			return p
@@ -134,7 +140,15 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := s.bearer(r.Context(), time.Now())
-	if p.Err != nil || p.Token == "" {
+	if p.Err != nil {
+		code := http.StatusUnauthorized
+		if p.Token != "" {
+			code = http.StatusBadGateway
+		}
+		fail(code, p.Err.Error()+"\n")
+		return
+	}
+	if p.Token == "" {
 		fail(http.StatusUnauthorized, "run grok login\n")
 		return
 	}

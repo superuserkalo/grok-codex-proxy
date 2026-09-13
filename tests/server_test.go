@@ -348,6 +348,93 @@ func TestRefreshSerializedOnConcurrentRequests(t *testing.T) {
 	}
 }
 
+func TestRefreshFailInWindowReturns502(t *testing.T) {
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	t.Cleanup(tok.Close)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("upstream should not be called")
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	exp := time.Now().UTC().Add(100 * time.Second).Format(time.RFC3339Nano)
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "live",
+	    "refresh_token": "r1",
+	    "expires_at": "`+exp+`"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		TokenURL:      tok.URL,
+		HTTPClient:    up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status=%d body=%s", res.StatusCode, b)
+	}
+	if strings.Contains(string(b), "run grok login") && !strings.Contains(string(b), "refresh") {
+		t.Fatalf("should not look like missing login: %s", b)
+	}
+	s, err := proxy.LoadStore(auth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.AccessToken() != "live" {
+		t.Fatalf("wiped live token: %q", s.AccessToken())
+	}
+}
+
+func TestRefreshFailHardExpiredReturns401(t *testing.T) {
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	t.Cleanup(tok.Close)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("upstream should not be called")
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2020-01-01T00:00:00Z"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		TokenURL:      tok.URL,
+		HTTPClient:    up.Client(),
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s", res.StatusCode, b)
+	}
+}
+
 func TestProxyAPIKeyGate(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

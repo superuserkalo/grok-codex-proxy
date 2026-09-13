@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,8 @@ const (
 	RefreshTimeout   = 15 * time.Second
 	TokenURL         = "https://auth.x.ai/oauth2/token"
 )
+
+var ErrRefresh = errors.New("token refresh")
 
 type Pick struct {
 	Token    string
@@ -157,6 +160,14 @@ func (s *Store) NeedsRefresh(now time.Time) bool {
 	return !now.Before(exp.Add(-RefreshSkew))
 }
 
+func (s *Store) HardExpired(now time.Time) bool {
+	exp, ok := s.ExpiresAt()
+	if !ok {
+		return false
+	}
+	return !now.Before(exp)
+}
+
 func (s *Store) ApplyTokens(access, refresh string, expiresAt time.Time) {
 	e := s.entry()
 	if e == nil {
@@ -195,7 +206,7 @@ func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL s
 	}
 	rt := s.RefreshToken()
 	if rt == "" {
-		return fmt.Errorf("no refresh_token; run grok login")
+		return fmt.Errorf("%w: no refresh_token", ErrRefresh)
 	}
 	if client == nil {
 		client = http.DefaultClient
@@ -209,20 +220,20 @@ func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL s
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %s", ErrRefresh, err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %s", ErrRefresh, err)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %s", ErrRefresh, err)
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("token refresh HTTP %d; run grok login", resp.StatusCode)
+		return fmt.Errorf("%w: HTTP %d", ErrRefresh, resp.StatusCode)
 	}
 	var tok struct {
 		AccessToken  string `json:"access_token"`
@@ -230,13 +241,13 @@ func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL s
 		ExpiresIn    int    `json:"expires_in"`
 	}
 	if err := json.Unmarshal(b, &tok); err != nil {
-		return fmt.Errorf("token refresh: bad json")
+		return fmt.Errorf("%w: bad json", ErrRefresh)
 	}
 	if tok.AccessToken == "" {
-		return fmt.Errorf("token refresh: empty access_token; run grok login")
+		return fmt.Errorf("%w: empty access_token", ErrRefresh)
 	}
 	if tok.ExpiresIn <= 0 {
-		return fmt.Errorf("token refresh: missing expires_in; run grok login")
+		return fmt.Errorf("%w: missing expires_in", ErrRefresh)
 	}
 	exp := now.Add(time.Duration(tok.ExpiresIn) * time.Second)
 	s.ApplyTokens(tok.AccessToken, tok.RefreshToken, exp)
