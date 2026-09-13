@@ -298,6 +298,71 @@ func TestCorruptFileDoesNotFallThroughToAPIKey(t *testing.T) {
 	}
 }
 
+func TestRefreshSaveFailureKeepsRotatedToken(t *testing.T) {
+	var n atomic.Int32
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
+	}))
+	t.Cleanup(tok.Close)
+	var mu sync.Mutex
+	var auths []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		auths = append(auths, r.Header.Get("Authorization"))
+		mu.Unlock()
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	dir := t.TempDir()
+	auth := writeAuth(t, dir, `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2020-01-01T00:00:00Z"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		TokenURL:      tok.URL,
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("first status=%d", res.StatusCode)
+	}
+	res, err = http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("second status=%d", res.StatusCode)
+	}
+	if n.Load() != 1 {
+		t.Fatalf("refresh calls=%d", n.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(auths) != 2 || auths[0] != "Bearer n" || auths[1] != "Bearer n" {
+		t.Fatalf("auths=%q", auths)
+	}
+}
+
 func TestRefreshIgnoresRequestCancel(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})

@@ -22,7 +22,10 @@ const (
 	TokenURL         = "https://auth.x.ai/oauth2/token"
 )
 
-var ErrRefresh = errors.New("token refresh")
+var (
+	ErrRefresh = errors.New("token refresh")
+	ErrPersist = errors.New("auth persist")
+)
 
 type Pick struct {
 	Token    string
@@ -251,7 +254,10 @@ func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL s
 	}
 	exp := now.Add(time.Duration(tok.ExpiresIn) * time.Second)
 	s.ApplyTokens(tok.AccessToken, tok.RefreshToken, exp)
-	return s.Save()
+	if err := s.Save(); err != nil {
+		return fmt.Errorf("%w: %s", ErrPersist, err)
+	}
+	return nil
 }
 
 func (s *Store) clientID() string {

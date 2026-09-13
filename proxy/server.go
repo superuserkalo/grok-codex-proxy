@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -76,6 +77,8 @@ type server struct {
 	mu         sync.Mutex
 	cond       *sync.Cond
 	refreshing bool
+	mem        *Store
+	memMod     time.Time
 }
 
 func NewMux(cfg Config) http.Handler {
@@ -96,7 +99,35 @@ func (s *server) tokenURL() string { return s.cfg.TokenURL }
 
 func (s *server) client() *http.Client { return s.cfg.HTTPClient }
 
+func (s *server) load() Pick {
+	p := Resolve(s.cfg)
+	if p.Store == nil {
+		s.mem = nil
+		return p
+	}
+	fi, err := os.Stat(p.Store.Path)
+	if err != nil {
+		return p
+	}
+	if s.mem != nil && !fi.ModTime().After(s.memMod) {
+		p.Store = s.mem
+		p.Token = s.mem.AccessToken()
+		p.Err = nil
+		return p
+	}
+	s.mem = p.Store
+	s.memMod = fi.ModTime()
+	return p
+}
+
 func (s *server) applyRefresh(p *Pick, now time.Time, err error) {
+	if err != nil && errors.Is(err, ErrPersist) {
+		if t := p.Store.AccessToken(); t != "" {
+			p.Token = t
+			p.Err = nil
+			return
+		}
+	}
 	if err != nil {
 		tok := p.Store.AccessToken()
 		if tok != "" && !p.Store.HardExpired(now) {
@@ -122,7 +153,7 @@ func (s *server) bearer(now time.Time) Pick {
 	for s.refreshing {
 		s.cond.Wait()
 	}
-	p := Resolve(s.cfg)
+	p := s.load()
 	if p.Store == nil || !p.Store.NeedsRefresh(now) {
 		s.mu.Unlock()
 		return p
@@ -136,6 +167,12 @@ func (s *server) bearer(now time.Time) Pick {
 	s.mu.Lock()
 	s.refreshing = false
 	s.cond.Broadcast()
+	s.mem = store
+	if err == nil {
+		if fi, e := os.Stat(store.Path); e == nil {
+			s.memMod = fi.ModTime()
+		}
+	}
 	s.applyRefresh(&p, now, err)
 	s.mu.Unlock()
 	return p
