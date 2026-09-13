@@ -5,23 +5,16 @@ import "strings"
 const providerHeader = "[model_providers.xai-oauth]"
 
 func providerTable(baseURL, envKey string) string {
-	var b strings.Builder
-	b.WriteString(providerHeader)
-	b.WriteString("\nname = \"xAI Grok OAuth (local)\"\n")
-	b.WriteString("base_url = \"")
-	b.WriteString(baseURL)
-	b.WriteString("\"\nwire_api = \"responses\"\n")
+	s := providerHeader + "\nname = \"xAI Grok OAuth (local)\"\nbase_url = \"" + baseURL + "\"\nwire_api = \"responses\"\n"
 	if envKey != "" {
-		b.WriteString("env_key = \"")
-		b.WriteString(envKey)
-		b.WriteString("\"\n")
+		s += "env_key = \"" + envKey + "\"\n"
 	}
-	return b.String()
+	return s
 }
 
 func UpsertProvider(src, baseURL, envKey string) string {
 	table := providerTable(baseURL, envKey)
-	lines := splitKeepEnd(src)
+	lines := strings.SplitAfter(src, "\n")
 	start, end, found := findTable(lines, providerHeader)
 	if !found {
 		out := strings.TrimRight(src, "\n")
@@ -30,35 +23,7 @@ func UpsertProvider(src, baseURL, envKey string) string {
 		}
 		return out + table
 	}
-	var b strings.Builder
-	for i := 0; i < start; i++ {
-		b.WriteString(lines[i])
-	}
-	b.WriteString(table)
-	for i := end; i < len(lines); i++ {
-		b.WriteString(lines[i])
-	}
-	return b.String()
-}
-
-func splitKeepEnd(s string) []string {
-	if s == "" {
-		return nil
-	}
-	var lines []string
-	for {
-		i := strings.IndexByte(s, '\n')
-		if i < 0 {
-			lines = append(lines, s)
-			break
-		}
-		lines = append(lines, s[:i+1])
-		s = s[i+1:]
-		if s == "" {
-			break
-		}
-	}
-	return lines
+	return strings.Join(lines[:start], "") + table + strings.Join(lines[end:], "")
 }
 
 func findTable(lines []string, header string) (start, end int, found bool) {
