@@ -72,12 +72,15 @@ func LoopbackHost(host string) bool {
 }
 
 type server struct {
-	cfg Config
-	mu  sync.Mutex
+	cfg        Config
+	mu         sync.Mutex
+	cond       *sync.Cond
+	refreshing bool
 }
 
 func NewMux(cfg Config) http.Handler {
 	s := &server{cfg: cfg.prepared()}
+	s.cond = sync.NewCond(&s.mu)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -93,31 +96,48 @@ func (s *server) tokenURL() string { return s.cfg.TokenURL }
 
 func (s *server) client() *http.Client { return s.cfg.HTTPClient }
 
-func (s *server) bearer(ctx context.Context, now time.Time) Pick {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	p := Resolve(s.cfg)
-	if p.Store != nil {
-		if err := RefreshIfDue(ctx, p.Store, s.client(), s.tokenURL(), now); err != nil {
-			tok := p.Store.AccessToken()
-			if tok != "" && !p.Store.HardExpired(now) {
-				p.Token = tok
-				p.Err = err
-				return p
-			}
-			p.Token = ""
+func (s *server) applyRefresh(p *Pick, now time.Time, err error) {
+	if err != nil {
+		tok := p.Store.AccessToken()
+		if tok != "" && !p.Store.HardExpired(now) {
+			p.Token = tok
 			p.Err = err
-			return p
-		}
-		if t := p.Store.AccessToken(); t != "" {
-			p.Token = t
-			p.Err = nil
-			return p
+			return
 		}
 		p.Token = ""
-		p.Err = fmt.Errorf("run grok login")
+		p.Err = err
+		return
+	}
+	if t := p.Store.AccessToken(); t != "" {
+		p.Token = t
+		p.Err = nil
+		return
+	}
+	p.Token = ""
+	p.Err = fmt.Errorf("run grok login")
+}
+
+func (s *server) bearer(now time.Time) Pick {
+	s.mu.Lock()
+	for s.refreshing {
+		s.cond.Wait()
+	}
+	p := Resolve(s.cfg)
+	if p.Store == nil || !p.Store.NeedsRefresh(now) {
+		s.mu.Unlock()
 		return p
 	}
+	s.refreshing = true
+	store := p.Store
+	s.mu.Unlock()
+
+	err := RefreshIfDue(context.Background(), store, s.client(), s.tokenURL(), now)
+
+	s.mu.Lock()
+	s.refreshing = false
+	s.cond.Broadcast()
+	s.applyRefresh(&p, now, err)
+	s.mu.Unlock()
 	return p
 }
 
@@ -139,7 +159,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
-	p := s.bearer(r.Context(), time.Now())
+	p := s.bearer(time.Now())
 	if p.Err != nil {
 		code := http.StatusUnauthorized
 		if p.Token != "" {

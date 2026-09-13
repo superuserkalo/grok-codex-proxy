@@ -1,6 +1,7 @@
 package proxy_test
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -294,6 +295,80 @@ func TestCorruptFileDoesNotFallThroughToAPIKey(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 401 {
 		t.Fatalf("status=%d", res.StatusCode)
+	}
+}
+
+func TestRefreshIgnoresRequestCancel(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var n atomic.Int32
+	tok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if n.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
+	}))
+	t.Cleanup(tok.Close)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	t.Cleanup(up.Close)
+
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2020-01-01T00:00:00Z"
+	  }
+	}`)
+	mux := proxy.NewMux(proxy.Config{
+		OAuthUpstream: up.URL,
+		AuthPath:      auth,
+		TokenURL:      tok.URL,
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/v1/models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		res.Body.Close()
+		errCh <- nil
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("token endpoint not reached")
+	}
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled request did not return")
+	}
+	close(release)
+
+	res, err := http.Get(srv.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("status=%d", res.StatusCode)
+	}
+	if n.Load() != 1 {
+		t.Fatalf("refresh calls=%d", n.Load())
 	}
 }
 
