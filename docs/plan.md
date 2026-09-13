@@ -4,7 +4,7 @@
 
 **Goal:** Ship a tiny Go stdlib binary that serves an OpenAI-compatible `/v1` on loopback, authenticating to xAI’s official CLI chat proxy with the Grok CLI OAuth session in `~/.grok/auth.json`.
 
-**Architecture:** One `package main` process. `auth.go` reads/refreshes the official auth file. `forward.go` rewrites the model slug, injects CLI headers, and copies bytes (SSE included). `server.go` binds loopback, gates on optional `PROXY_API_KEY`, and exposes `/healthz` plus `/v1/*`. `codex.go` surgically upserts Codex’s `[model_providers.xai-oauth]` table. `main.go` is `status` / `serve`.
+**Architecture:** One process. `main.go` is `status` / `serve`. `proxy/` reads/refreshes the official auth file, rewrites the model slug, injects CLI headers, copies bytes (SSE included), binds loopback, gates on optional `PROXY_API_KEY`, exposes `/healthz` plus `/v1/*`, and surgically upserts Codex’s `[model_providers.xai-oauth]` table. Tests live in `tests/` (`package proxy_test`).
 
 **Tech Stack:** Go 1.22+, stdlib only (`flag`, `net/http`, `encoding/json`, `net/http/httptest` in tests). MIT.
 
@@ -29,12 +29,12 @@
 | `go.mod` | Module |
 | `.gitignore` | Binary, `.env` |
 | `LICENSE` | MIT |
-| `slug.go` / `slug_test.go` | Model slug map |
-| `auth.go` / `auth_test.go` | auth.json load, pick, refresh, atomic save |
-| `codex.go` / `codex_test.go` | Surgical Codex provider-table upsert |
-| `forward.go` / `forward_test.go` | Body model rewrite, SSE copy |
-| `server.go` / `server_test.go` | Mux, gate token, healthz, bind rules |
-| `main.go` / `main_test.go` | `status` / `serve` CLI |
+| `proxy/slug.go` / `tests/slug_test.go` | Model slug map |
+| `proxy/auth.go` / `tests/auth_test.go` | auth.json load, pick, refresh, atomic save |
+| `proxy/codex.go` / `tests/codex_test.go` | Surgical Codex provider-table upsert |
+| `proxy/forward.go` / `tests/forward_test.go` | Body model rewrite, SSE copy |
+| `proxy/server.go` / `tests/server_test.go` | Mux, gate token, healthz, bind rules |
+| `main.go` / `tests/main_test.go` | `status` / `serve` CLI |
 | `README.md`, `AGENTS.md`, `CLAUDE.md`, `docs/*.md`, `.env.example` | Docs |
 
 ## Agreed test seams (from spec)
@@ -47,7 +47,7 @@
 
 ## Type names (do not drift)
 
-`MapModel`, `Store`, `LoadStore`, `NeedsRefresh`, `ApplyTokens`, `RefreshIfDue`, `UpsertProvider`, `Config`, `NewMux`, `rewriteModel`, `copyStream`, `loopbackHost`, `OfficialIssuer`, `OfficialClientID`, `RefreshSkew`, `TokenURL`, `writeAtomic`.
+`MapModel`, `Store`, `LoadStore`, `NeedsRefresh`, `ApplyTokens`, `RefreshIfDue`, `UpsertProvider`, `Config`, `NewMux`, `RewriteModel`, `CopyStream`, `JoinURL`, `LoopbackHost`, `ListenAddr`, `OfficialIssuer`, `OfficialClientID`, `RefreshSkew`, `TokenURL`, `WriteAtomic`.
 
 ---
 

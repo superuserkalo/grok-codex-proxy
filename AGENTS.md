@@ -4,14 +4,15 @@ Go stdlib loopback proxy. Codex talks to `127.0.0.1:8787/v1`; this process forwa
 
 ## Layout
 
-| File | What |
+| Path | What |
 | --- | --- |
 | `main.go` | `status` / `serve` |
-| `auth.go` | auth.json load, refresh, atomic save |
-| `codex.go` | surgical `[model_providers.xai-oauth]` upsert |
-| `forward.go` | model slug + SSE copy |
-| `server.go` | mux, gate token, upstream |
-| `slug.go` | `MapModel` |
+| `proxy/auth.go` | auth.json load, refresh, atomic save |
+| `proxy/codex.go` | surgical `[model_providers.xai-oauth]` upsert |
+| `proxy/forward.go` | model slug + SSE copy |
+| `proxy/server.go` | mux, gate token, upstream |
+| `proxy/slug.go` | `MapModel` |
+| `tests/` | `package proxy_test` |
 | `docs/design.md` | spec |
 
 ## Commands

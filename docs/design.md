@@ -26,10 +26,8 @@ One process. Auth shim + header injector.
 
 ```
 main.go      status / serve
-auth.go      load auth.json, pick entry, refresh, atomic write
-server.go    bind, optional gate token, /healthz, config upsert
-forward.go   slug map, CLI headers, stream copy
-*_test.go    beside the code they cover
+proxy/       auth, Codex upsert, forward, mux, slug map
+tests/       package proxy_test
 ```
 
 ## Auth
