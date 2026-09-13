@@ -203,13 +203,6 @@ func (s *Store) Save() error {
 	return WriteAtomic(s.Path, b)
 }
 
-func RefreshIfDue(ctx context.Context, s *Store, client *http.Client, tokenURL string, now time.Time) error {
-	if s == nil || !s.NeedsRefresh(now) {
-		return nil
-	}
-	return Refresh(ctx, s, client, tokenURL, now)
-}
-
 func Refresh(ctx context.Context, s *Store, client *http.Client, tokenURL string, now time.Time) error {
 	if s == nil {
 		return fmt.Errorf("%w: no session", ErrRefresh)

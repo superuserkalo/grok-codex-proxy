@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +14,7 @@ import (
 )
 
 func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://other.example::abc": {
 	    "key": "other-token",
 	    "oidc_issuer": "https://other.example"
@@ -31,10 +28,7 @@ func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
 	    "email": "keep-me@example.com",
 	    "auth_mode": "oidc"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -48,17 +42,12 @@ func TestLoadStorePrefersOfficialEntryAndKeyField(t *testing.T) {
 }
 
 func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "access_token": "alt-token",
 	    "oidc_issuer": "https://auth.x.ai"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -70,17 +59,12 @@ func TestLoadStoreAcceptsAccessTokenField(t *testing.T) {
 
 func TestNeedsRefresh(t *testing.T) {
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "key": "t",
 	    "expires_at": "2099-01-01T00:00:00Z"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -96,17 +80,12 @@ func TestNeedsRefresh(t *testing.T) {
 }
 
 func TestNeedsRefreshUnknownExpiryIsFalse(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "access_token": "alt-token",
 	    "oidc_issuer": "https://auth.x.ai"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -117,9 +96,7 @@ func TestNeedsRefreshUnknownExpiryIsFalse(t *testing.T) {
 }
 
 func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "key": "old",
 	    "refresh_token": "r1",
@@ -127,10 +104,7 @@ func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
 	    "email": "keep-me@example.com",
 	    "auth_mode": "oidc"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -163,9 +137,7 @@ func TestSavePreservesUnknownFieldsAndIsAtomic(t *testing.T) {
 }
 
 func TestLoadStorePrefixBeatsIssuerContains(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "aaa-forged": {
 	    "key": "forged",
 	    "oidc_issuer": "https://evil.example/auth.x.ai"
@@ -173,10 +145,7 @@ func TestLoadStorePrefixBeatsIssuerContains(t *testing.T) {
 	  "https://auth.x.ai::other-client": {
 	    "key": "real"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -187,32 +156,22 @@ func TestLoadStorePrefixBeatsIssuerContains(t *testing.T) {
 }
 
 func TestLoadStoreRejectsIssuerContainsOnly(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "aaa-forged": {
 	    "key": "forged",
 	    "oidc_issuer": "https://evil.example/auth.x.ai"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	if _, err := proxy.LoadStore(path); err == nil {
 		t.Fatal("expected no session")
 	}
 }
 
 func TestLoadStoreRejectsLookalikeIssuerPrefix(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai.evil::abc": { "key": "evil" },
 	  "https://auth.x.ai::other-client": { "key": "real" }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -223,15 +182,10 @@ func TestLoadStoreRejectsLookalikeIssuerPrefix(t *testing.T) {
 }
 
 func TestLoadStorePrefixChoiceIsSorted(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::zzzz": { "key": "z" },
 	  "https://auth.x.ai::aaaa": { "key": "a" }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
@@ -316,34 +270,27 @@ func TestResolveFileVsEnv(t *testing.T) {
 	}
 }
 
-func TestRefreshIfDuePostsFormAndSaves(t *testing.T) {
+func TestRefreshPostsFormAndSaves(t *testing.T) {
 	var gotBody string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := startUp(t, func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
-	}))
-	t.Cleanup(ts.Close)
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
+	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "key": "old",
 	    "refresh_token": "r1",
 	    "expires_at": "2026-09-13T12:02:00Z"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := proxy.RefreshIfDue(context.Background(), s, ts.Client(), ts.URL, now); err != nil {
+	if err := proxy.Refresh(context.Background(), s, ts.Client(), ts.URL, now); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, "grant_type=refresh_token") || !strings.Contains(gotBody, "refresh_token=r1") {
@@ -358,31 +305,24 @@ func TestRefreshIfDuePostsFormAndSaves(t *testing.T) {
 	}
 }
 
-func TestRefreshIfDueRequiresExpiresIn(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestRefreshRequiresExpiresIn(t *testing.T) {
+	ts := startUp(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr"}`))
-	}))
-	t.Cleanup(ts.Close)
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
+	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "key": "old",
 	    "refresh_token": "r1",
 	    "expires_at": "2026-09-13T12:02:00Z"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := proxy.RefreshIfDue(context.Background(), s, ts.Client(), ts.URL, now); err == nil {
+	if err := proxy.Refresh(context.Background(), s, ts.Client(), ts.URL, now); err == nil {
 		t.Fatal("expected error")
 	}
 	s2, err := proxy.LoadStore(path)
@@ -394,34 +334,27 @@ func TestRefreshIfDueRequiresExpiresIn(t *testing.T) {
 	}
 }
 
-func TestRefreshIfDueUsesChosenClientID(t *testing.T) {
+func TestRefreshUsesChosenClientID(t *testing.T) {
 	var gotBody string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := startUp(t, func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
-	}))
-	t.Cleanup(ts.Close)
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
+	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::other-client": {
 	    "key": "old",
 	    "refresh_token": "r1",
 	    "expires_at": "2026-09-13T12:02:00Z"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := proxy.RefreshIfDue(context.Background(), s, ts.Client(), ts.URL, now); err != nil {
+	if err := proxy.Refresh(context.Background(), s, ts.Client(), ts.URL, now); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, "client_id=other-client") {
@@ -429,33 +362,26 @@ func TestRefreshIfDueUsesChosenClientID(t *testing.T) {
 	}
 }
 
-func TestRefreshIfDueHonorsCanceledContext(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestRefreshHonorsCanceledContext(t *testing.T) {
+	ts := startUp(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Error("token endpoint should not be called")
 		w.WriteHeader(200)
-	}))
-	t.Cleanup(ts.Close)
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "auth.json")
+	})
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
-	body := `{
+	path := writeAuth(t, t.TempDir(), `{
 	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
 	    "key": "old",
 	    "refresh_token": "r1",
 	    "expires_at": "2026-09-13T12:02:00Z"
 	  }
-	}`
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 	s, err := proxy.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := proxy.RefreshIfDue(ctx, s, ts.Client(), ts.URL, now); err == nil {
+	if err := proxy.Refresh(ctx, s, ts.Client(), ts.URL, now); err == nil {
 		t.Fatal("expected error")
 	}
 	s2, err := proxy.LoadStore(path)
