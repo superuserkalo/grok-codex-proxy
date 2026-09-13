@@ -313,11 +313,11 @@ func (s *Store) clientID() string {
 }
 
 type session struct {
-	cfg   Config
-	mu    sync.Mutex
-	store *Store
-	mod   time.Time
-	stale bool
+	cfg        Config
+	mu         sync.Mutex
+	store      *Store
+	mod        time.Time
+	mustRotate bool
 }
 
 func newSession(cfg Config) *session {
@@ -362,7 +362,7 @@ func (s *session) load() Pick {
 	p := Resolve(s.cfg)
 	s.setStore(p.Store)
 	s.noteDisk()
-	s.stale = false
+	s.mustRotate = false
 	return p
 }
 
@@ -382,9 +382,9 @@ func (s *session) refresh(now time.Time, force bool) Pick {
 		return p
 	}
 	if force {
-		s.stale = true
+		s.mustRotate = true
 	}
-	if !s.stale && !p.Store.NeedsRefresh(now) {
+	if !s.mustRotate && !p.Store.NeedsRefresh(now) {
 		return p
 	}
 	err := Refresh(context.Background(), p.Store, s.cfg.HTTPClient, s.cfg.TokenURL, now)
@@ -394,7 +394,7 @@ func (s *session) refresh(now time.Time, force bool) Pick {
 		s.noteDisk()
 	}
 	if p.Err == nil {
-		s.stale = false
+		s.mustRotate = false
 	}
 	return p
 }

@@ -1,3 +1,4 @@
 /grok-codex-proxy
 *.exe
 .env
+.commandcode/
