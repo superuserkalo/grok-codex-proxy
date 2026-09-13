@@ -33,7 +33,7 @@ CI (`.github/workflows/test.yml`): `gofmt`, `go vet`, `go test ./...`. Do not ad
 - Stdlib only. No extra HTTP client, no TOML library, no CLI framework.
 - Never log tokens or `auth.json`. Never copy `~/.grok/auth.json` into the repo.
 - Commands: `status`, `serve` (`--host`, `--port`, `--no-write-config`). Routes: GET `/healthz`, GET `/v1/models`, POST `/v1/responses`, POST `/v1/chat/completions`.
-- Thin forward: rewrite the model slug, inject upstream headers, pass the body through, `Flush` SSE. Do not parse tool-call JSON.
+- Thin forward: rewrite only the model slug (leave other JSON bytes intact), inject upstream headers, pass the body through, `Flush` SSE. Do not parse tool-call JSON.
 - Retry only GET `/v1/models` on 429 / transient 5xx. Never retry POST streams.
 - Default bind `127.0.0.1:8787`. Refuse off-loopback unless `PROXY_API_KEY` is set.
 - `serve` upserts `[model_providers.xai-oauth]` only: replace that table until the next `[` header, or append. No TOML encoder round-trip. Do not change top-level `model` / `model_provider`.

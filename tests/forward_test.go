@@ -22,6 +22,61 @@ func TestRewriteModel(t *testing.T) {
 	}
 }
 
+func TestRewriteModelPreservesNonModelBytes(t *testing.T) {
+	body := []byte(`{"model":"xai/grok-4.6","max_tokens":9007199254740993,"temperature":0.0,"tools":[{"function":{"parameters":{"n":1}}}]}`)
+	out, model := proxy.RewriteModel(body)
+	if model != "grok-4.6" {
+		t.Fatalf("model=%q", model)
+	}
+	if !bytes.Contains(out, []byte(`"model":"grok-4.6"`)) {
+		t.Fatalf("body=%s", out)
+	}
+	if !bytes.Contains(out, []byte(`9007199254740993`)) {
+		t.Fatalf("integer corrupted: %s", out)
+	}
+	if !bytes.Contains(out, []byte(`0.0`)) {
+		t.Fatalf("float rewritten: %s", out)
+	}
+	if !bytes.Contains(out, []byte(`{"n":1}`)) {
+		t.Fatalf("nested json rewritten: %s", out)
+	}
+}
+
+func TestRewriteModelUnchangedSlugKeepsOriginalBody(t *testing.T) {
+	body := []byte(`{"model":"grok-4.6","max_tokens":9007199254740993}`)
+	out, model := proxy.RewriteModel(body)
+	if model != "grok-4.6" {
+		t.Fatalf("model=%q", model)
+	}
+	if !bytes.Equal(out, body) {
+		t.Fatalf("rewrote untouched slug: %s", out)
+	}
+}
+
+func TestRewriteModelLeavesOtherBytesIntact(t *testing.T) {
+	body := []byte(`{"z":1, "model": "xai/grok-4.6", "a":2}`)
+	out, model := proxy.RewriteModel(body)
+	if model != "grok-4.6" {
+		t.Fatalf("model=%q", model)
+	}
+	want := []byte(`{"z":1, "model": "grok-4.6", "a":2}`)
+	if !bytes.Equal(out, want) {
+		t.Fatalf("got %s want %s", out, want)
+	}
+}
+
+func TestRewriteModelDoesNotTouchSlugInOtherFields(t *testing.T) {
+	body := []byte(`{"input":"xai/grok-4.6","model":"xai/grok-4.6"}`)
+	out, model := proxy.RewriteModel(body)
+	if model != "grok-4.6" {
+		t.Fatalf("model=%q", model)
+	}
+	want := []byte(`{"input":"xai/grok-4.6","model":"grok-4.6"}`)
+	if !bytes.Equal(out, want) {
+		t.Fatalf("got %s want %s", out, want)
+	}
+}
+
 func TestJoinURLStripsDuplicateV1(t *testing.T) {
 	cases := map[[2]string]string{
 		{"https://cli-chat-proxy.grok.com/v1", "/v1/responses"}: "https://cli-chat-proxy.grok.com/v1/responses",
