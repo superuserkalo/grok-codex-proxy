@@ -308,3 +308,74 @@ func TestRefreshIfDuePostsFormAndSaves(t *testing.T) {
 		t.Fatalf("token=%q", s2.AccessToken())
 	}
 }
+
+func TestRefreshIfDueRequiresExpiresIn(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr"}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	body := `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2026-09-13T12:02:00Z"
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proxy.RefreshIfDue(s, ts.Client(), ts.URL, now); err == nil {
+		t.Fatal("expected error")
+	}
+	s2, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.AccessToken() != "old" {
+		t.Fatalf("token=%q", s2.AccessToken())
+	}
+}
+
+func TestRefreshIfDueUsesChosenClientID(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"n","refresh_token":"nr","expires_in":3600}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "auth.json")
+	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	body := `{
+	  "https://auth.x.ai::other-client": {
+	    "key": "old",
+	    "refresh_token": "r1",
+	    "expires_at": "2026-09-13T12:02:00Z"
+	  }
+	}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := proxy.LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proxy.RefreshIfDue(s, ts.Client(), ts.URL, now); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotBody, "client_id=other-client") {
+		t.Fatalf("form=%q", gotBody)
+	}
+}

@@ -205,7 +205,7 @@ func RefreshIfDue(s *Store, client *http.Client, tokenURL string, now time.Time)
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {rt},
-		"client_id":     {OfficialClientID},
+		"client_id":     {s.clientID()},
 	}
 	resp, err := client.PostForm(tokenURL, form)
 	if err != nil {
@@ -230,10 +230,18 @@ func RefreshIfDue(s *Store, client *http.Client, tokenURL string, now time.Time)
 	if tok.AccessToken == "" {
 		return fmt.Errorf("token refresh: empty access_token; run grok login")
 	}
-	exp := now.Add(30 * 24 * time.Hour)
-	if tok.ExpiresIn > 0 {
-		exp = now.Add(time.Duration(tok.ExpiresIn) * time.Second)
+	if tok.ExpiresIn <= 0 {
+		return fmt.Errorf("token refresh: missing expires_in; run grok login")
 	}
+	exp := now.Add(time.Duration(tok.ExpiresIn) * time.Second)
 	s.ApplyTokens(tok.AccessToken, tok.RefreshToken, exp)
 	return s.Save()
+}
+
+func (s *Store) clientID() string {
+	_, id, ok := strings.Cut(s.chosen, "::")
+	if ok && id != "" {
+		return id
+	}
+	return OfficialClientID
 }

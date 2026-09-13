@@ -10,7 +10,7 @@ Access token: `key`, else `access_token`. Also `refresh_token`, `expires_at`, pl
 
 ## Refresh
 
-About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` with `grant_type=refresh_token` and the public Grok CLI client id. Atomic write (temp + rename), mode `0600`. Happens before the upstream call so a live SSE is not killed.
+About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` with `grant_type=refresh_token` and `client_id` from the chosen `issuer::client_id` key. The token response must include `access_token` and a positive `expires_in`; missing `expires_in` is an error and does not rewrite `auth.json`. Atomic write (temp + rename), mode `0600`. Happens before the upstream call so a live SSE is not killed.
 
 ## Credential order
 
