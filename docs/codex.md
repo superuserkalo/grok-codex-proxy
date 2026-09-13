@@ -23,4 +23,6 @@ codex -c model_provider="xai-oauth" -m grok-4.6 "reply with the word pong"
 
 Skip the write with `grok-codex-proxy serve --no-write-config`.
 
+`serve` binds first, then writes `base_url` from the actual listen address (`http://[::1]:8787/v1` when you pass `--host ::1`). Bind failure does not rewrite `config.toml`.
+
 Fully quit and reopen Codex after a config write. Start `serve` before Codex.

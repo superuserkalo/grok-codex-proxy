@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -116,18 +117,24 @@ func cmdServe(args []string) int {
 	cfg.Host = *host
 	cfg.Port = *port
 	cfg.ClientVersion = grokClientVersion()
+	ln, err := net.Listen("tcp", cfg.ListenAddr())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer ln.Close()
+	bound := ln.Addr().String()
 	if !*noWrite {
-		if err := writeCodexConfig(*host, *port, cfg.ProxyAPIKey != ""); err != nil {
+		if err := writeCodexConfig(bound, cfg.ProxyAPIKey != ""); err != nil {
 			fmt.Fprintf(os.Stderr, "codex config: %v\n", err)
 			return 1
 		}
 		fmt.Fprintln(os.Stderr, "wrote Codex provider table")
 	}
-	addr := cfg.ListenAddr()
-	fmt.Fprintf(os.Stderr, "listening on http://%s\n", addr)
+	fmt.Fprintf(os.Stderr, "listening on http://%s\n", bound)
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
-	if err := http.ListenAndServe(addr, proxy.NewMux(cfg)); err != nil {
+	if err := http.Serve(ln, proxy.NewMux(cfg)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -162,7 +169,7 @@ func apiUpstream() string {
 	return proxy.DefaultAPIUpstream
 }
 
-func writeCodexConfig(host string, port int, gate bool) error {
+func writeCodexConfig(addr string, gate bool) error {
 	home := os.Getenv("CODEX_HOME")
 	if home == "" {
 		home = filepath.Join(os.Getenv("HOME"), ".codex")
@@ -177,7 +184,7 @@ func writeCodexConfig(host string, port int, gate bool) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	base := fmt.Sprintf("http://%s:%d/v1", host, port)
+	base := "http://" + addr + "/v1"
 	envKey := ""
 	if gate {
 		envKey = "PROXY_API_KEY"

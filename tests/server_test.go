@@ -436,6 +436,13 @@ func TestResponsesPOSTDoesNotRetry429(t *testing.T) {
 	}
 }
 
+func TestListenAddrBracketsIPv6(t *testing.T) {
+	cfg := proxy.Config{Host: "::1", Port: 8787}
+	if got := cfg.ListenAddr(); got != "[::1]:8787" {
+		t.Fatalf("ListenAddr=%q", got)
+	}
+}
+
 func TestLoopbackHost(t *testing.T) {
 	if !proxy.LoopbackHost("127.0.0.1") || !proxy.LoopbackHost("localhost") || !proxy.LoopbackHost("::1") {
 		t.Fatal("loopback")
