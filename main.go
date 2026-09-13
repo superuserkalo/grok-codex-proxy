@@ -62,31 +62,39 @@ func grokClientVersion() string {
 			return ver.Version
 		}
 	}
-	return "1.0.30"
+	return proxy.DefaultClientVersion
 }
 
 func cmdStatus() int {
 	path := authPath()
 	fmt.Printf("auth_path=%s\n", path)
-	s, err := proxy.LoadStore(path)
-	if err != nil {
-		fmt.Printf("session=none\nerror=%s\n", err)
-		if os.Getenv("GROK_OAUTH_TOKEN") == "" && os.Getenv("XAI_API_KEY") == "" {
-			return 1
+	p := proxy.Resolve(serveConfig(path))
+	if p.Store != nil {
+		if e := p.Store.Entry(); e != "" {
+			fmt.Printf("entry=%s\n", e)
 		}
-		fmt.Println("fallback=env")
-		return 0
+		if exp, ok := p.Store.ExpiresAt(); ok {
+			fmt.Printf("expires_at=%s\n", exp.UTC().Format(time.RFC3339Nano))
+			fmt.Printf("needs_refresh=%t\n", p.Store.NeedsRefresh(time.Now()))
+		} else {
+			fmt.Println("expires_at=unknown")
+			fmt.Println("needs_refresh=true")
+		}
+	} else if p.Source != proxy.SourceFile {
+		fmt.Println("session=none")
+		if p.Source == proxy.SourceOAuthEnv || p.Source == proxy.SourceAPIKey {
+			fmt.Println("fallback=env")
+		}
 	}
-	fmt.Printf("entry=%s\n", s.Entry())
-	if exp, ok := s.ExpiresAt(); ok {
-		fmt.Printf("expires_at=%s\n", exp.UTC().Format(time.RFC3339Nano))
-		fmt.Printf("needs_refresh=%t\n", s.NeedsRefresh(time.Now()))
-	} else {
-		fmt.Println("expires_at=unknown")
-		fmt.Println("needs_refresh=true")
+	if p.Err != nil {
+		fmt.Printf("error=%s\n", p.Err)
+		if p.Source == proxy.SourceFile {
+			fmt.Printf("upstream=%s\n", p.Upstream)
+		}
+		return 1
 	}
-	fmt.Printf("upstream=%s\n", oauthUpstream())
-	if s.AccessToken() == "" {
+	fmt.Printf("upstream=%s\n", p.Upstream)
+	if p.Token == "" {
 		return 1
 	}
 	return 0
@@ -104,16 +112,10 @@ func cmdServe(args []string) int {
 		fmt.Fprintln(os.Stderr, "refusing non-loopback bind without PROXY_API_KEY")
 		return 2
 	}
-	cfg := proxy.Config{
-		Host:          *host,
-		Port:          *port,
-		AuthPath:      authPath(),
-		OAuthToken:    os.Getenv("GROK_OAUTH_TOKEN"),
-		APIKey:        os.Getenv("XAI_API_KEY"),
-		ProxyAPIKey:   os.Getenv("PROXY_API_KEY"),
-		ClientVersion: grokClientVersion(),
-	}
-	cfg.UseCLIHeaders, cfg.Upstream = resolveUpstream(cfg)
+	cfg := serveConfig(authPath())
+	cfg.Host = *host
+	cfg.Port = *port
+	cfg.ClientVersion = grokClientVersion()
 	if !*noWrite {
 		if err := writeCodexConfig(*host, *port, cfg.ProxyAPIKey != ""); err != nil {
 			fmt.Fprintf(os.Stderr, "codex config: %v\n", err)
@@ -132,6 +134,17 @@ func cmdServe(args []string) int {
 	return 0
 }
 
+func serveConfig(auth string) proxy.Config {
+	return proxy.Config{
+		AuthPath:      auth,
+		OAuthToken:    os.Getenv("GROK_OAUTH_TOKEN"),
+		APIKey:        os.Getenv("XAI_API_KEY"),
+		ProxyAPIKey:   os.Getenv("PROXY_API_KEY"),
+		OAuthUpstream: oauthUpstream(),
+		APIUpstream:   apiUpstream(),
+	}
+}
+
 func oauthUpstream() string {
 	if v := os.Getenv("XAI_BASE_URL"); v != "" {
 		return v
@@ -139,27 +152,14 @@ func oauthUpstream() string {
 	if v := os.Getenv("GROK_CLI_CHAT_PROXY_BASE_URL"); v != "" {
 		return v
 	}
-	return "https://cli-chat-proxy.grok.com/v1"
+	return proxy.DefaultOAuthUpstream
 }
 
 func apiUpstream() string {
 	if v := os.Getenv("XAI_BASE_URL"); v != "" {
 		return v
 	}
-	return "https://api.x.ai/v1"
-}
-
-func resolveUpstream(cfg proxy.Config) (bool, string) {
-	if _, err := os.Stat(cfg.AuthPath); err == nil {
-		return true, oauthUpstream()
-	}
-	if cfg.OAuthToken != "" {
-		return true, oauthUpstream()
-	}
-	if cfg.APIKey != "" {
-		return false, apiUpstream()
-	}
-	return true, oauthUpstream()
+	return proxy.DefaultAPIUpstream
 }
 
 func writeCodexConfig(host string, port int, gate bool) error {

@@ -20,6 +20,6 @@ About 300 seconds before `expires_at`, POST `https://auth.x.ai/oauth2/token` wit
 
 `XAI_BASE_URL` overrides the upstream base. `GROK_CLI_CHAT_PROXY_BASE_URL` overrides the OAuth host only.
 
-If the file exists but cannot yield a token, the proxy returns 401 (`run grok login`) and does not fall through to an API key.
+If the file exists but cannot yield a token, `serve` returns 401 (`run grok login`) and `status` exits nonzero. Neither falls through to an API key. `status` and `serve` use this same cascade, including which upstream and headers a request gets.
 
 There is no `proxy login`. Use `grok login` or `grok login --device-auth`.

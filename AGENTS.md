@@ -9,7 +9,7 @@ README is for humans. This file is for agents.
 | Path | What |
 | --- | --- |
 | `main.go` | `status` / `serve` |
-| `proxy/auth.go` | auth.json load, refresh, atomic save |
+| `proxy/auth.go` | auth.json load, refresh, atomic save, credential pick |
 | `proxy/codex.go` | surgical `[model_providers.xai-oauth]` upsert |
 | `proxy/forward.go` | model slug + SSE copy |
 | `proxy/server.go` | mux, gate token, upstream |
@@ -34,6 +34,7 @@ CI (`.github/workflows/test.yml`): `gofmt`, `go vet`, `go test ./...`. Do not ad
 - Never log tokens or `auth.json`. Never copy `~/.grok/auth.json` into the repo.
 - Commands: `status`, `serve` (`--host`, `--port`, `--no-write-config`). Routes: GET `/healthz`, GET `/v1/models`, POST `/v1/responses`, POST `/v1/chat/completions`.
 - Thin forward: rewrite only the model slug (leave other JSON bytes intact), inject upstream headers, pass the body through, `Flush` SSE. Do not parse tool-call JSON.
+- One credential cascade for `status` and `serve` (file, `GROK_OAUTH_TOKEN`, `XAI_API_KEY`). That pick selects token, upstream, and CLI headers together. Refresh under the server lock.
 - Retry only GET `/v1/models` on 429 / transient 5xx. Never retry POST streams.
 - Default bind `127.0.0.1:8787`. Refuse off-loopback unless `PROXY_API_KEY` is set.
 - `serve` upserts `[model_providers.xai-oauth]` only: replace that table until the next `[` header, or append. No TOML encoder round-trip. Do not change top-level `model` / `model_provider`.

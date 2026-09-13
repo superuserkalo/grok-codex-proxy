@@ -183,6 +183,54 @@ func TestLoadStorePrefixChoiceIsSorted(t *testing.T) {
 	}
 }
 
+func TestResolveFileVsEnv(t *testing.T) {
+	auth := writeAuth(t, t.TempDir(), `{
+	  "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+	    "key": "session-token",
+	    "expires_at": "2099-01-01T00:00:00Z"
+	  }
+	}`)
+	p := proxy.Resolve(proxy.Config{
+		AuthPath:      auth,
+		APIKey:        "xai-x",
+		OAuthUpstream: "https://cli.example/v1",
+		APIUpstream:   "https://api.example/v1",
+	})
+	if p.Err != nil || p.Source != proxy.SourceFile || p.Token != "session-token" || p.Store == nil {
+		t.Fatalf("file: %+v", p)
+	}
+	if p.Upstream != "https://cli.example/v1" || !p.CLI {
+		t.Fatalf("file upstream=%q cli=%t", p.Upstream, p.CLI)
+	}
+
+	missing := filepath.Join(t.TempDir(), "auth.json")
+	p = proxy.Resolve(proxy.Config{
+		AuthPath:      missing,
+		APIKey:        "xai-x",
+		OAuthUpstream: "https://cli.example/v1",
+		APIUpstream:   "https://api.example/v1",
+	})
+	if p.Err != nil || p.Source != proxy.SourceAPIKey || p.Token != "xai-x" || p.Store != nil {
+		t.Fatalf("api: %+v", p)
+	}
+	if p.Upstream != "https://api.example/v1" || p.CLI {
+		t.Fatalf("api upstream=%q cli=%t", p.Upstream, p.CLI)
+	}
+
+	p = proxy.Resolve(proxy.Config{
+		AuthPath:      writeAuth(t, t.TempDir(), `{not json`),
+		APIKey:        "xai-x",
+		OAuthUpstream: "https://cli.example/v1",
+		APIUpstream:   "https://api.example/v1",
+	})
+	if p.Err == nil || p.Source != proxy.SourceFile || p.Token != "" || p.Store != nil {
+		t.Fatalf("corrupt: %+v", p)
+	}
+	if p.Upstream != "https://cli.example/v1" {
+		t.Fatalf("corrupt upstream=%q", p.Upstream)
+	}
+}
+
 func TestRefreshIfDuePostsFormAndSaves(t *testing.T) {
 	var gotBody string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

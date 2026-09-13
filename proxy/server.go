@@ -7,35 +7,48 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
-const maxBody = 32 << 20
+const (
+	maxBody              = 32 << 20
+	DefaultClientVersion = "1.0.30"
+	DefaultOAuthUpstream = "https://cli-chat-proxy.grok.com/v1"
+	DefaultAPIUpstream   = "https://api.x.ai/v1"
+)
 
 type Config struct {
 	Host          string
 	Port          int
-	Upstream      string
-	UseCLIHeaders bool
+	OAuthUpstream string
+	APIUpstream   string
 	ProxyAPIKey   string
 	AuthPath      string
 	OAuthToken    string
 	APIKey        string
 	ClientVersion string
+	TokenURL      string
 	HTTPClient    *http.Client
-}
-
-func (cfg Config) client() *http.Client {
-	if cfg.HTTPClient != nil {
-		return cfg.HTTPClient
-	}
-	return http.DefaultClient
 }
 
 func (cfg Config) ListenAddr() string {
 	return net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
+}
+
+func (cfg Config) oauthUp() string {
+	if cfg.OAuthUpstream != "" {
+		return cfg.OAuthUpstream
+	}
+	return DefaultOAuthUpstream
+}
+
+func (cfg Config) apiUp() string {
+	if cfg.APIUpstream != "" {
+		return cfg.APIUpstream
+	}
+	return DefaultAPIUpstream
 }
 
 func LoopbackHost(host string) bool {
@@ -47,19 +60,55 @@ func LoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+type server struct {
+	cfg Config
+	mu  sync.Mutex
+}
+
 func NewMux(cfg Config) http.Handler {
+	s := &server{cfg: cfg}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = io.WriteString(w, "ok\n")
 	})
-	mux.HandleFunc("/v1/models", cfg.serveV1)
-	mux.HandleFunc("/v1/responses", cfg.serveV1)
-	mux.HandleFunc("/v1/chat/completions", cfg.serveV1)
+	mux.HandleFunc("/v1/models", s.serveV1)
+	mux.HandleFunc("/v1/responses", s.serveV1)
+	mux.HandleFunc("/v1/chat/completions", s.serveV1)
 	return mux
 }
 
-func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
+func (s *server) tokenURL() string {
+	if s.cfg.TokenURL != "" {
+		return s.cfg.TokenURL
+	}
+	return TokenURL
+}
+
+func (s *server) client() *http.Client {
+	if s.cfg.HTTPClient != nil {
+		return s.cfg.HTTPClient
+	}
+	return http.DefaultClient
+}
+
+func (s *server) bearer(now time.Time) (token, upstream string, cli bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := Resolve(s.cfg)
+	if p.Store != nil {
+		if err := RefreshIfDue(p.Store, s.client(), s.tokenURL(), now); err != nil {
+			return "", p.Upstream, p.CLI, err
+		}
+		if t := p.Store.AccessToken(); t != "" {
+			return t, p.Upstream, p.CLI, nil
+		}
+		return "", p.Upstream, p.CLI, fmt.Errorf("run grok login")
+	}
+	return p.Token, p.Upstream, p.CLI, p.Err
+}
+
+func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	status := 0
 	model := ""
@@ -73,11 +122,11 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 		status = code
 		http.Error(w, msg, code)
 	}
-	if cfg.ProxyAPIKey != "" && r.Header.Get("Authorization") != "Bearer "+cfg.ProxyAPIKey {
+	if s.cfg.ProxyAPIKey != "" && r.Header.Get("Authorization") != "Bearer "+s.cfg.ProxyAPIKey {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
-	token, err := cfg.bearer()
+	token, upstream, cli, err := s.bearer(time.Now())
 	if err != nil || token == "" {
 		fail(http.StatusUnauthorized, "run grok login\n")
 		return
@@ -89,7 +138,7 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 	}
 	body, model = RewriteModel(body)
 
-	upURL := JoinURL(cfg.Upstream, r.URL.Path)
+	upURL := JoinURL(upstream, r.URL.Path)
 	if r.URL.RawQuery != "" {
 		upURL += "?" + r.URL.RawQuery
 	}
@@ -104,14 +153,14 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	if cfg.UseCLIHeaders {
+	if cli {
 		req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
 		if model != "" {
 			req.Header.Set("x-grok-model-override", model)
 		}
-		ver := cfg.ClientVersion
+		ver := s.cfg.ClientVersion
 		if ver == "" {
-			ver = "1.0.30"
+			ver = DefaultClientVersion
 		}
 		req.Header.Set("x-grok-client-version", ver)
 	}
@@ -119,14 +168,14 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 		req.Header.Set("Accept", ae)
 	}
 
-	resp, err := cfg.doUpstream(req)
+	resp, err := s.doUpstream(req)
 	if err != nil {
 		fail(http.StatusBadGateway, "upstream error\n")
 		return
 	}
 	defer resp.Body.Close()
 
-	if cfg.UseCLIHeaders && (resp.StatusCode == 401 || resp.StatusCode == 403) {
+	if cli && (resp.StatusCode == 401 || resp.StatusCode == 403) {
 		fail(resp.StatusCode, "token rejected by the CLI proxy; run grok login or use XAI_API_KEY\n")
 		return
 	}
@@ -140,8 +189,8 @@ func (cfg Config) serveV1(w http.ResponseWriter, r *http.Request) {
 	CopyStream(w, resp.Body)
 }
 
-func (cfg Config) doUpstream(req *http.Request) (*http.Response, error) {
-	resp, err := cfg.client().Do(req)
+func (s *server) doUpstream(req *http.Request) (*http.Response, error) {
+	resp, err := s.client().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -153,30 +202,5 @@ func (cfg Config) doUpstream(req *http.Request) (*http.Response, error) {
 	resp.Body.Close()
 	time.Sleep(200 * time.Millisecond)
 	req2 := req.Clone(req.Context())
-	return cfg.client().Do(req2)
-}
-
-func (cfg Config) bearer() (string, error) {
-	if cfg.AuthPath != "" {
-		if _, err := os.Stat(cfg.AuthPath); err == nil {
-			s, err := LoadStore(cfg.AuthPath)
-			if err != nil {
-				return "", err
-			}
-			if err := RefreshIfDue(s, cfg.client(), TokenURL, time.Now()); err != nil {
-				return "", err
-			}
-			if t := s.AccessToken(); t != "" {
-				return t, nil
-			}
-			return "", fmt.Errorf("run grok login")
-		}
-	}
-	if cfg.OAuthToken != "" {
-		return cfg.OAuthToken, nil
-	}
-	if cfg.APIKey != "" {
-		return cfg.APIKey, nil
-	}
-	return "", fmt.Errorf("run grok login")
+	return s.client().Do(req2)
 }

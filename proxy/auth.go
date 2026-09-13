@@ -17,7 +17,51 @@ const (
 	OfficialClientID = "b1a00492-073a-47ea-816f-4c329264a828"
 	RefreshSkew      = 300 * time.Second
 	TokenURL         = "https://auth.x.ai/oauth2/token"
+
+	SourceFile     = "file"
+	SourceOAuthEnv = "oauth-env"
+	SourceAPIKey   = "api-key"
+	SourceNone     = "none"
 )
+
+type Pick struct {
+	Source   string
+	Token    string
+	Upstream string
+	CLI      bool
+	Store    *Store
+	Err      error
+}
+
+func Resolve(cfg Config) Pick {
+	oauth, api := cfg.oauthUp(), cfg.apiUp()
+	var missing error
+	if cfg.AuthPath != "" {
+		_, err := os.Stat(cfg.AuthPath)
+		if err == nil {
+			st, err := LoadStore(cfg.AuthPath)
+			if err != nil {
+				return Pick{Source: SourceFile, Upstream: oauth, CLI: true, Err: err}
+			}
+			return Pick{Source: SourceFile, Token: st.AccessToken(), Upstream: oauth, CLI: true, Store: st}
+		}
+		if !os.IsNotExist(err) {
+			return Pick{Source: SourceFile, Upstream: oauth, CLI: true, Err: err}
+		}
+		missing = err
+	}
+	if cfg.OAuthToken != "" {
+		return Pick{Source: SourceOAuthEnv, Token: cfg.OAuthToken, Upstream: oauth, CLI: true}
+	}
+	if cfg.APIKey != "" {
+		return Pick{Source: SourceAPIKey, Token: cfg.APIKey, Upstream: api, CLI: false}
+	}
+	err := fmt.Errorf("run grok login")
+	if missing != nil {
+		err = missing
+	}
+	return Pick{Source: SourceNone, Upstream: oauth, CLI: true, Err: err}
+}
 
 type Store struct {
 	Path    string
