@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
 func RewriteModel(body []byte) ([]byte, string) {
@@ -86,12 +85,4 @@ func CopyStream(dst http.ResponseWriter, src io.Reader) {
 			return
 		}
 	}
-}
-
-func JoinURL(base, path string) string {
-	base = strings.TrimRight(base, "/")
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return base + path
 }

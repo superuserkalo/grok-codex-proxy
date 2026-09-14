@@ -189,14 +189,8 @@ func (s *Store) ExpiresAt() (time.Time, bool) {
 }
 
 func (s *Store) NeedsRefresh(now time.Time) bool {
-	if s == nil {
-		return false
-	}
 	exp, ok := s.ExpiresAt()
-	if !ok {
-		return false
-	}
-	return !now.Before(exp.Add(-RefreshSkew))
+	return ok && !now.Before(exp.Add(-RefreshSkew))
 }
 
 func (s *Store) HardExpired(now time.Time) bool {
@@ -246,9 +240,6 @@ func Refresh(ctx context.Context, s *Store, client *http.Client, tokenURL string
 	rt := s.RefreshToken()
 	if rt == "" {
 		return fmt.Errorf("%w: no refresh_token", ErrRefresh)
-	}
-	if client == nil {
-		client = http.DefaultClient
 	}
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
@@ -332,13 +323,6 @@ func newSession(cfg Config) *session {
 	return &session{cfg: cfg.prepared()}
 }
 
-func (s *session) setStore(st *Store) {
-	s.store = st
-	if st == nil {
-		s.mod = time.Time{}
-	}
-}
-
 func (s *session) noteDisk() {
 	if s.store == nil {
 		s.mod = time.Time{}
@@ -368,7 +352,7 @@ func (s *session) load() Pick {
 		return newPick(SourceFile, st.AccessToken(), s.cfg.OAuthUpstream, st, nil)
 	}
 	p := Resolve(s.cfg)
-	s.setStore(p.Store)
+	s.store = p.Store
 	s.noteDisk()
 	s.mustRotate = false
 	return p

@@ -100,21 +100,11 @@ func cliRejected(resp *http.Response) bool {
 	return resp.StatusCode == 401 || resp.StatusCode == 403
 }
 
-func secureEqual(a, b string) bool {
-	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
-
 func drain(resp *http.Response) int {
 	code := resp.StatusCode
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return code
-}
-
-func withBearer(req *http.Request, token string) *http.Request {
-	req2 := req.Clone(req.Context())
-	req2.Header.Set("Authorization", "Bearer "+token)
-	return req2
 }
 
 func (s *server) recoverCLI(resp *http.Response, req *http.Request, p Pick) (*http.Response, int, error) {
@@ -130,7 +120,9 @@ func (s *server) recoverCLI(resp *http.Response, req *http.Request, p Pick) (*ht
 	if st, _ := p.gate(); st != 0 {
 		return nil, code, nil
 	}
-	retry, err := s.doUpstream(withBearer(req, p.Token))
+	authed := req.Clone(req.Context())
+	authed.Header.Set("Authorization", "Bearer "+p.Token)
+	retry, err := s.doUpstream(authed)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -151,7 +143,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		status = code
 		http.Error(w, msg, code)
 	}
-	if s.cfg.ProxyAPIKey != "" && !secureEqual("Bearer "+s.cfg.ProxyAPIKey, r.Header.Get("Authorization")) {
+	if s.cfg.ProxyAPIKey != "" && subtle.ConstantTimeCompare([]byte("Bearer "+s.cfg.ProxyAPIKey), []byte(r.Header.Get("Authorization"))) != 1 {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
@@ -207,7 +199,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) upstreamRequest(r *http.Request, p Pick, body []byte, model string) (*http.Request, error) {
-	upURL := JoinURL(p.Upstream, r.URL.Path)
+	upURL := p.Upstream + r.URL.Path
 	if r.URL.RawQuery != "" {
 		upURL += "?" + r.URL.RawQuery
 	}

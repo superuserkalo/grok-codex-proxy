@@ -133,7 +133,6 @@ func cmdServe(args []string) int {
 		fmt.Fprintln(os.Stderr, "wrote Codex provider table")
 	}
 	fmt.Fprintf(os.Stderr, "listening on http://%s\n", bound)
-	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
 	if err := http.Serve(ln, proxy.NewMux(cfg)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
