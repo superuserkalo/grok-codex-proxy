@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -176,5 +177,49 @@ func TestSessionReloadsWhenAuthFileIsNewer(t *testing.T) {
 	p = s.live(now)
 	if p.Token != "new" {
 		t.Fatalf("reloaded token=%q", p.Token)
+	}
+}
+
+func TestGateDoesNotReadStoreUnderRotation(t *testing.T) {
+	path := writeSessionAuth(t, t.TempDir(), map[string]any{
+		"key":        "held",
+		"expires_at": time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano),
+	})
+	st, err := LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newPick(SourceFile, "", "https://cli.example", st, nil)
+	applyRefresh(&p, ErrRefresh)
+	if code, _ := p.gate(); code != http.StatusBadGateway {
+		t.Fatalf("gate=%d", code)
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			st.ApplyTokens("rotated", "", time.Now().Add(time.Hour))
+		}
+	}()
+	bad := 0
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if code, _ := p.gate(); code != http.StatusBadGateway {
+			bad = code
+			break
+		}
+	}
+	close(stop)
+	wg.Wait()
+	if bad != 0 {
+		t.Fatalf("gate=%d during rotation", bad)
 	}
 }

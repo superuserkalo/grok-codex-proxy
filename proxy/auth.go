@@ -43,10 +43,18 @@ type Pick struct {
 	Source   Source
 	Store    *Store
 	Err      error
+	// fallback snapshots whether the store held a live token we did not send
+	// when this pick was built. Picks are built under the session lock, so
+	// gate() never reads the store.
+	fallback bool
 }
 
 func newPick(src Source, token, upstream string, st *Store, err error) Pick {
-	return Pick{Token: token, Upstream: upstream, Source: src, Store: st, Err: err}
+	p := Pick{Token: token, Upstream: upstream, Source: src, Store: st, Err: err}
+	if st != nil {
+		p.fallback = st.AccessToken() != "" && !st.HardExpired(time.Now())
+	}
+	return p
 }
 
 func (p Pick) CLI() bool { return p.Source != SourceAPI }
@@ -86,7 +94,7 @@ func (p Pick) gate() (int, string) {
 	if p.Err != nil {
 		msg = p.Err.Error() + "\n"
 	}
-	if p.Err != nil && p.Store != nil && p.Store.AccessToken() != "" && !p.Store.HardExpired(time.Now()) {
+	if p.Err != nil && p.fallback {
 		return http.StatusBadGateway, msg
 	}
 	return http.StatusUnauthorized, msg
@@ -389,7 +397,6 @@ func (s *session) refresh(now time.Time, force bool) Pick {
 	}
 	err := Refresh(context.Background(), p.Store, s.cfg.HTTPClient, s.cfg.TokenURL, now)
 	applyRefresh(&p, err)
-	s.setStore(p.Store)
 	if err == nil {
 		s.noteDisk()
 	}

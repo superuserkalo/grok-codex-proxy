@@ -92,13 +92,9 @@ func cmdStatus() int {
 	}
 	if p.Err != nil {
 		fmt.Printf("error=%s\n", p.Err)
-		if p.Source == proxy.SourceFile {
-			fmt.Printf("upstream=%s\n", p.Upstream)
-		}
-		return 1
 	}
 	fmt.Printf("upstream=%s\n", p.Upstream)
-	if p.Token == "" {
+	if p.Err != nil || p.Token == "" {
 		return 1
 	}
 	return 0

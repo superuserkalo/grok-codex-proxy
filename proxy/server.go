@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"errors"
 	"io"
 	"log"
@@ -61,7 +62,7 @@ func origin(base string) string {
 
 func LoopbackHost(host string) bool {
 	h := strings.Trim(host, "[]")
-	if h == "localhost" || h == "127.0.0.1" || h == "::1" {
+	if h == "localhost" {
 		return true
 	}
 	ip := net.ParseIP(h)
@@ -89,12 +90,18 @@ func NewMux(cfg Config) http.Handler {
 	return mux
 }
 
+// retryable confines retries to bodyless GETs: retry paths re-Do a clone of
+// the already-consumed request, so anything retried must have no body.
 func retryable(req *http.Request) bool {
 	return req.Method == http.MethodGet && req.URL.Path == "/v1/models"
 }
 
 func cliRejected(resp *http.Response) bool {
 	return resp.StatusCode == 401 || resp.StatusCode == 403
+}
+
+func secureEqual(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
 func drain(resp *http.Response) int {
@@ -112,6 +119,7 @@ func withBearer(req *http.Request, token string) *http.Request {
 
 func (s *server) recoverCLI(resp *http.Response, req *http.Request, p Pick) (*http.Response, int, error) {
 	code := drain(resp)
+	// env picks (oauth-env / api-key) have no Store, so there is no session to rotate
 	if p.Store == nil {
 		return nil, code, nil
 	}
@@ -143,7 +151,7 @@ func (s *server) serveV1(w http.ResponseWriter, r *http.Request) {
 		status = code
 		http.Error(w, msg, code)
 	}
-	if s.cfg.ProxyAPIKey != "" && r.Header.Get("Authorization") != "Bearer "+s.cfg.ProxyAPIKey {
+	if s.cfg.ProxyAPIKey != "" && !secureEqual("Bearer "+s.cfg.ProxyAPIKey, r.Header.Get("Authorization")) {
 		fail(http.StatusUnauthorized, "unauthorized\n")
 		return
 	}
